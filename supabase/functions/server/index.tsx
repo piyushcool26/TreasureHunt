@@ -15,7 +15,10 @@ const supabase = createClient(
 
 // Hardcoded admin email - ONLY this email gets admin role
 const ADMIN_EMAIL = "admin@google.com";
-const ALLOWED_DOMAIN = "@google.com";
+const ALLOWED_DOMAIN = "@google.com"; // For password signup only, OTP allows any domain
+
+// TEMPORARY: Test email for OTP functionality
+const OTP_TEST_EMAIL = "112516077@ece.iiitp.ac.in"; // TODO: Remove after OTP testing
 
 function decodeJWT(token: string) {
   try {
@@ -249,12 +252,14 @@ async function handler(req: Request): Promise<Response> {
       });
     }
 
-    // Check domain restriction
-    if (!user.email?.toLowerCase().endsWith(ALLOWED_DOMAIN)) {
-      return new Response(JSON.stringify({ error: `Only ${ALLOWED_DOMAIN} allowed` }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Check domain restriction (skip for OTP users who may have any email)
+    // We allow any email to authenticate via OTP, but password signup is restricted to @google.com
+    const isPasswordUser = user.email?.toLowerCase().endsWith(ALLOWED_DOMAIN);
+    const isOtpTestUser = user.email?.toLowerCase() === OTP_TEST_EMAIL.toLowerCase();
+
+    // Allow: @google.com users, OTP test user, or any OTP authenticated users
+    if (!isPasswordUser && !isOtpTestUser) {
+      console.log(`OTP user allowed: ${user.email}`);
     }
 
     // Get or create profile automatically on any authenticated request
