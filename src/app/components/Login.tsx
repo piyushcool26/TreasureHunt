@@ -87,6 +87,7 @@ export function Login() {
         email: email,
         options: {
           shouldCreateUser: true,
+          emailRedirectTo: undefined, // Disable magic link, force OTP
         },
       });
 
@@ -435,15 +436,15 @@ export function Login() {
                   transition={{ delay: 0.1 }}
                 >
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    6-Digit Code
+                    Verification Code
                   </label>
                   <input
                     type="text"
                     value={otpToken}
-                    onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="123456"
+                    onChange={(e) => setOtpToken(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder="12345678"
                     required
-                    maxLength={6}
+                    maxLength={8}
                     className="w-full px-5 py-3 rounded-xl border-2 border-gray-200 focus:border-[#4285F4] focus:ring-4 focus:ring-[#4285F4]/20 outline-none transition-all font-medium text-center text-2xl tracking-widest"
                   />
                   <p className="text-xs text-gray-500 mt-2 text-center">
