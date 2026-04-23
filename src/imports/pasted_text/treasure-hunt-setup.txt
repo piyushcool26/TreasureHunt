@@ -1,0 +1,99 @@
+# Role and Objective
+You are an Expert Full-Stack Developer specializing in Next.js (App Router), TypeScript, Tailwind CSS, Supabase (Auth, Database, Realtime, RLS), and Framer Motion. 
+
+Your objective is to build a complete, impeccable, highly polished "Online Treasure Hunt" web application for Google corporate employees. The app must be secure, real-time, and feature a premium Google Material Design 3 aesthetic.
+
+# Tech Stack & Libraries
+- Framework: Next.js (App Router)
+- Language: TypeScript
+- Styling: Tailwind CSS
+- Animations: Framer Motion
+- Icons: lucide-react
+- Backend/DB/Auth: Supabase (@supabase/supabase-js and @supabase/ssr)
+- UI Components: shadcn/ui (if applicable, or custom Tailwind)
+
+# 1. Database Schema & Supabase Configuration
+Generate the SQL script or explain the precise setup for the following Supabase tables. Apply Row Level Security (RLS) to all tables.
+
+Table 1: `profiles`
+- `id` (uuid, references auth.users, primary key)
+- `email` (text)
+- `role` (text, default 'user', can be 'admin')
+- `current_question` (integer, default 1)
+- `last_submission_time` (timestamp with time zone, default now())
+* RLS: Users can only read/update their own profile. Admins can read all.
+
+Table 2: `questions`
+- `id` (integer, primary key, represents question number)
+- `desk_string` (text, e.g., "Desk 402-B")
+- `image_url` (text, link to the clue image)
+- `valid_answers` (text array, e.g., ['answerone', 'answertwo'])
+* RLS: Users can only read the row where `id` equals their `current_question`. Admins can read/write all.
+
+Table 3: `announcements`
+- `id` (uuid, primary key)
+- `message` (text)
+- `created_at` (timestamp with time zone, default now())
+* RLS: Everyone can read. Only Admins can insert/update/delete.
+
+# 2. Authentication Logic
+- Implement Supabase Auth (Magic Link or OAuth).
+- CRITICAL RESTRICTION: The application MUST only allow logins from `@google.com` domains. Implement this check either via Supabase Auth Allow List configuration instructions or middleware.
+
+# 3. Core Application Logic & Data Flow
+
+A. User Normalization & Validation (The Answer Engine):
+- When a user submits an answer, create a utility function that formats their input:
+  `const normalizeString = (str: string) => str.toLowerCase().replace(/\s+/g, '');`
+- Compare the normalized input against the `valid_answers` array for their `current_question`.
+- If correct: Trigger a Server Action or Supabase RPC to increment their `current_question` by 1 and update their `last_submission_time` to the exact current timestamp.
+
+B. The Leaderboard Logic:
+- Fetch all profiles.
+- Format the display name: split the email at '@' and return the first part (e.g., `xyz@google.com` becomes `xyz`).
+- Sorting Rule 1: Sort by `current_question` in descending order (highest question wins).
+- Sorting Rule 2 (Tie-breaker): If users are on the same question, sort by `last_submission_time` in ASCENDING order (whoever got there first wins).
+- CRITICAL: Do NOT render or display the `last_submission_time` in the UI.
+
+C. Real-time Announcements:
+- Use Supabase Realtime to subscribe to the `announcements` table. When an admin posts a new hint, it should appear instantly on the user's dashboard without a page refresh.
+
+# 4. Frontend UI/UX & Theming (Google Material 3 Vibe)
+
+Color Palette (Use strictly via Tailwind classes):
+- Google Blue: `#4285F4` (Primary buttons, active states)
+- Google Red: `#EA4335` (Errors, critical alerts)
+- Google Yellow: `#FBBC05` (Announcements, warnings)
+- Google Green: `#34A853` (Success states, correct answers)
+- Background: Minimalist white (`#FFFFFF`) or very soft gray (`#F8F9FA`).
+
+App Structure:
+
+Route: `/login`
+- Clean, centered login card with Google branding.
+- Input for `@google.com` email or a "Sign in with Google" button.
+
+Route: `/dashboard` (Main User Play Area)
+- Top Navbar: Brand logo, user's email prefix, and a sleek logout button.
+- Announcement Banner: Sticky at the top, soft yellow background, pulsing megaphone icon.
+- Split Layout:
+  - Left (70%): The active question card. Show `Question {i}`, the `desk_string`, and the image. Below the image, a large, focused text input and a Google Blue submit button.
+  - Right (30%): The real-time Leaderboard card. Show Rank, Name (prefix only), and Current Question.
+- Success State: If `current_question` > total questions, hide the input and display a massive, full-screen "Congratulations" message with Framer Motion confetti and Google Green accents.
+
+Route: `/admin` (Protected Route)
+- Middleware must verify user `role === 'admin'`.
+- Provide a simple form with a textarea and submit button to insert new announcements to the database.
+
+# 5. Interactivity & Animations
+- Wrap the main question card in a Framer Motion `<AnimatePresence>`. 
+- When an answer is correct, animate the current question sliding out to the left (`x: -100, opacity: 0`) and the new question sliding in from the right (`x: 100, opacity: 0`).
+- Add tactile, subtle scale effects (`whileHover={{ scale: 1.02 }}`, `whileTap={{ scale: 0.98 }}`) to all buttons.
+
+# Execution Plan
+Please generate the code step-by-step:
+1. Provide the exact SQL for Supabase.
+2. Generate the Next.js `middleware.ts` for route protection.
+3. Generate the Supabase client utilities.
+4. Build the core backend logic/server actions for answer validation.
+5. Build the UI components (Login, Dashboard, Admin, Leaderboard).
