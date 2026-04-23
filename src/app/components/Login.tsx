@@ -203,36 +203,11 @@ export function Login() {
             </div>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.6 }}
-            className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-4 mb-6 shadow-inner"
-          >
-            <div className="font-bold text-blue-900 mb-2 flex items-center gap-2">
-              🔑 Test Accounts
-            </div>
-            <div className="space-y-2 text-blue-700 text-sm">
-              <div className="bg-white/60 rounded-lg px-3 py-2">
-                <strong>Admin:</strong> admin@google.com /
-                admin123
-              </div>
-              <div className="bg-white/60 rounded-lg px-3 py-2">
-                <strong>User:</strong> users@google.com /
-                user123
-              </div>
-            </div>
-            <div className="mt-3 text-gray-600 text-xs bg-white/40 rounded-lg px-3 py-2">
-              💡 New users can sign up with any @google.com
-              email
-            </div>
-          </motion.div>
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.7 }}
+              transition={{ delay: 0.6 }}
             >
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Email
@@ -250,7 +225,7 @@ export function Login() {
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.8 }}
+              transition={{ delay: 0.7 }}
             >
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Password
@@ -278,7 +253,7 @@ export function Login() {
             <motion.button
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.9 }}
+              transition={{ delay: 0.8 }}
               whileHover={{
                 scale: 1.02,
                 boxShadow:
@@ -329,7 +304,7 @@ export function Login() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 1 }}
+            transition={{ delay: 0.9 }}
             className="text-center mt-6 text-sm"
           >
             <span className="text-gray-600">
