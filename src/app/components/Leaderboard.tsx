@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { Trophy, Medal, Award } from "lucide-react";
 
-type Row = { id: string; name: string; current_question: number };
+type Row = { id: string; name: string; correct_count: number };
 
 export function Leaderboard({ rows, currentUserId }: { rows: Row[]; currentUserId?: string }) {
   // Extra safety: filter out admin users client-side (should already be filtered server-side)
@@ -70,7 +70,7 @@ export function Leaderboard({ rows, currentUserId }: { rows: Row[]; currentUserI
                     : "bg-gray-200 text-gray-700"
                 }`}
               >
-                Q{r.current_question}
+                {r.correct_count} ✓
               </span>
             </div>
           );

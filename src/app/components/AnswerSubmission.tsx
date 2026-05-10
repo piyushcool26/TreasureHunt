@@ -7,14 +7,16 @@ import { useGSAP } from "@gsap/react";
 type AnswerSubmissionProps = {
   currentQuestion: number;
   totalQuestions: number;
-  onSubmit: (answer: string) => Promise<boolean>;
+  onSubmit: (answer: string) => Promise<{ correct: boolean; rateLimited?: boolean; message?: string }>;
   questionImage?: string | null;
+  roundNumber?: number;
 };
 
-export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, questionImage }: AnswerSubmissionProps) {
+export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, questionImage, roundNumber = 1 }: AnswerSubmissionProps) {
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<"correct" | "incorrect" | null>(null);
+  const [result, setResult] = useState<"correct" | "incorrect" | "rateLimited" | null>(null);
+  const [rateLimitMessage, setRateLimitMessage] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -51,17 +53,27 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
 
     setSubmitting(true);
     setResult(null);
+    setRateLimitMessage("");
 
-    const isCorrect = await onSubmit(answer);
-    setResult(isCorrect ? "correct" : "incorrect");
+    const response = await onSubmit(answer);
 
-    if (isCorrect) {
+    if (response.rateLimited) {
+      setResult("rateLimited");
+      setRateLimitMessage(response.message || "Too many submissions. Please wait.");
+      setSubmitting(false);
+      setTimeout(() => {
+        setResult(null);
+        setRateLimitMessage("");
+      }, 5000);
+    } else if (response.correct) {
+      setResult("correct");
       setAnswer("");
       setTimeout(() => {
         setResult(null);
         setSubmitting(false);
       }, 3000);
     } else {
+      setResult("incorrect");
       setSubmitting(false);
       setTimeout(() => setResult(null), 4000);
     }
@@ -132,7 +144,7 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
               animate={{ opacity: 1, scale: 1 }}
               className="px-4 py-2 bg-gradient-to-r from-[#4285F4] to-[#34A853] text-white rounded-full text-sm font-semibold shadow-lg"
             >
-              Question {currentQuestion} / {totalQuestions}
+              Round {roundNumber} - Question {currentQuestion} / {totalQuestions}
             </motion.div>
           </div>
 
@@ -215,6 +227,8 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
                 className={`flex items-center gap-3 p-5 rounded-2xl shadow-lg ${
                   result === "correct"
                     ? "bg-gradient-to-r from-green-50 to-emerald-50 text-green-800 border-2 border-green-300"
+                    : result === "rateLimited"
+                    ? "bg-gradient-to-r from-yellow-50 to-amber-50 text-yellow-800 border-2 border-yellow-300"
                     : "bg-gradient-to-r from-red-50 to-orange-50 text-red-800 border-2 border-red-300"
                 }`}
               >
@@ -229,6 +243,19 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
                     <div>
                       <p className="font-bold text-lg">Excellent! That's correct! 🎉</p>
                       <p className="text-sm text-green-700">Moving to the next question...</p>
+                    </div>
+                  </>
+                ) : result === "rateLimited" ? (
+                  <>
+                    <motion.div
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ duration: 0.5, repeat: 2 }}
+                    >
+                      <AlertCircle size={28} className="text-yellow-600" />
+                    </motion.div>
+                    <div>
+                      <p className="font-bold text-lg">Slow down! ⏱️</p>
+                      <p className="text-sm text-yellow-700">{rateLimitMessage || "Too many attempts. Wait a minute before trying again."}</p>
                     </div>
                   </>
                 ) : (

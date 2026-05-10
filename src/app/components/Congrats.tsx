@@ -176,7 +176,7 @@ export function Congrats({ name }: { name: string }) {
           transition={{ delay: 1.5 }}
           className="text-2xl text-gray-700 max-w-2xl font-medium"
         >
-          🎉 You've cracked every clue in the hunt! 🎉
+          🎉 You've completed all questions in this round! 🎉
         </motion.p>
 
         <motion.p
@@ -185,7 +185,7 @@ export function Congrats({ name }: { name: string }) {
           transition={{ delay: 1.8 }}
           className="text-lg text-gray-600 max-w-xl mt-3"
         >
-          Your name now shines on the leaderboard. You're a true treasure hunter! 🏆
+          Amazing work! Check the leaderboard to see where you stand. Stay tuned for the next round! 🏆
         </motion.p>
       </motion.div>
     </div>

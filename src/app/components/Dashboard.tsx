@@ -13,7 +13,8 @@ type Profile = {
   id: string;
   email: string;
   role: string;
-  current_question: number;
+  current_display_number?: number;
+  correct_count?: number;
 };
 
 type Announcement = { id: string; message: string; created_at: string; is_active: boolean };
@@ -23,6 +24,8 @@ type QuestionData = {
   desk_string: string;
   image_url: string | null;
   show_image: boolean;
+  display_number: number;
+  round_number: number;
 };
 
 export function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
@@ -33,19 +36,18 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
   const [questionData, setQuestionData] = useState<QuestionData | null>(null);
+  const [activeRound, setActiveRound] = useState(1);
 
   const refresh = useCallback(async () => {
     try {
       const me = await apiFetch("/me", {}, token);
       setProfile(me.profile);
-      setTotalQuestions(me.totalQuestions);
-
-      // Check if finished
-      const isFinished = me.profile.current_question > me.totalQuestions;
-      setFinished(isFinished);
+      setTotalQuestions(me.totalQuestions || 0);
+      setActiveRound(me.activeRound || 1);
+      setFinished(me.finished || false);
 
       // Fetch current question data if not finished
-      if (!isFinished) {
+      if (!me.finished) {
         try {
           const questionRes = await apiFetch("/question", {}, token);
           if (questionRes.question) {
@@ -62,7 +64,8 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
       ]);
 
       console.log("Leaderboard data received:", lb.leaderboard);
-      setLeaderboard(lb.leaderboard);
+      setLeaderboard(lb.leaderboard || []);
+      setActiveRound(lb.activeRound || activeRound);
       setAnnouncements(ann.announcements);
       // Set active announcement to latest active one
       const latestActive = ann.announcements.find((a: Announcement) => a.is_active);
@@ -70,7 +73,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     } catch (e) {
       console.error("Dashboard refresh error:", e);
     }
-  }, [token]);
+  }, [token, activeRound]);
 
   useEffect(() => {
     refresh();
@@ -126,15 +129,47 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
 
   // Periodic leaderboard refresh
   useEffect(() => {
-    const id = setInterval(() => {
-      apiFetch("/leaderboard", {}, token)
-        .then((lb) => setLeaderboard(lb.leaderboard))
-        .catch((e) => console.error("Leaderboard poll error:", e));
-    }, 10000);
-    return () => clearInterval(id);
-  }, [token]);
+    if (!token || !profile) return;
 
-  async function handleSubmit(answer: string): Promise<boolean> {
+    let failureCount = 0;
+    const MAX_FAILURES = 3;
+
+    const pollLeaderboard = async () => {
+      try {
+        const lb = await apiFetch("/leaderboard", {}, token);
+        if (lb?.leaderboard) {
+          setLeaderboard(lb.leaderboard);
+          failureCount = 0; // Reset on success
+        }
+      } catch (e) {
+        failureCount++;
+
+        // Silently handle network errors during polling
+        if (e instanceof TypeError && e.message === "Failed to fetch") {
+          // Network error - only log if persistent
+          if (failureCount >= MAX_FAILURES) {
+            console.warn("Leaderboard polling: persistent network issues detected");
+          }
+          return;
+        }
+
+        // Log other types of errors
+        if (e instanceof Error && !e.message.includes("timeout")) {
+          console.error("Leaderboard poll error:", e);
+        }
+      }
+    };
+
+    // Initial poll
+    pollLeaderboard();
+
+    // Set up interval - refresh every 1 minute
+    const id = setInterval(pollLeaderboard, 60000);
+
+    return () => clearInterval(id);
+  }, [token, profile]);
+
+  async function handleSubmit(answer: string): Promise<{ correct: boolean; rateLimited?: boolean; message?: string }> {
     try {
       const res = await apiFetch(
         "/submit",
@@ -143,12 +178,19 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
       );
       if (res.correct) {
         await refresh();
-        return true;
+        return { correct: true };
       }
-      return false;
-    } catch (e) {
+      if (res.rateLimited) {
+        return { correct: false, rateLimited: true, message: res.message };
+      }
+      return { correct: false };
+    } catch (e: any) {
+      // Handle rate limit errors (429 status)
+      if (e?.message?.includes("429") || e?.message?.includes("Too many")) {
+        return { correct: false, rateLimited: true, message: "Too many submissions. Please wait before trying again." };
+      }
       console.error("Submit error:", e);
-      return false;
+      return { correct: false };
     }
   }
 
@@ -224,14 +266,30 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
           // User View: Answer submission + leaderboard - no question display
           <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
             <div className="lg:col-span-7">
-              {finished ? (
+              {totalQuestions === 0 ? (
+                // No questions available yet
+                <div className="bg-white rounded-3xl shadow-2xl p-12 border border-gray-100 text-center">
+                  <div className="max-w-md mx-auto">
+                    <div className="mb-6">
+                      <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-[#4285F4] to-[#34A853] flex items-center justify-center">
+                        <span className="text-5xl">🕐</span>
+                      </div>
+                    </div>
+                    <h2 className="text-3xl font-bold text-gray-900 mb-4">The round is yet to start</h2>
+                    <p className="text-gray-600 text-lg">
+                      Questions for Round {activeRound} haven't been uploaded yet. Please check back soon!
+                    </p>
+                  </div>
+                </div>
+              ) : finished ? (
                 <Congrats name={namePrefix} />
               ) : (
                 <AnswerSubmission
-                  currentQuestion={profile.current_question}
+                  currentQuestion={questionData?.display_number || 1}
                   totalQuestions={totalQuestions}
                   onSubmit={handleSubmit}
                   questionImage={questionData?.image_url || null}
+                  roundNumber={activeRound}
                 />
               )}
             </div>

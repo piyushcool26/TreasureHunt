@@ -39,20 +39,46 @@ export async function apiFetch(path: string, opts: RequestInit = {}, token?: str
     ...(opts.headers as Record<string, string> | undefined),
   };
 
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
-  const text = await res.text();
+  // Add timeout to prevent hanging requests
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-  let data: any = {};
   try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text };
-  }
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...opts,
+      headers,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
 
-  if (!res.ok) {
-    console.error(`API ${path} failed (${res.status}):`, data);
-    throw new Error(data?.error || `Request failed: ${res.status}`);
-  }
+    const text = await res.text();
 
-  return data;
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text };
+    }
+
+    if (!res.ok) {
+      // For rate limiting (429), return the response data instead of throwing
+      if (res.status === 429) {
+        return data;
+      }
+
+      console.error(`API ${path} failed (${res.status}):`, data);
+      throw new Error(data?.error || `Request failed: ${res.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    // Handle abort/timeout errors
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timeout - server took too long to respond');
+    }
+
+    throw error;
+  }
 }

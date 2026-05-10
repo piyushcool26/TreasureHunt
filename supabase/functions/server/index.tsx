@@ -76,15 +76,19 @@ async function getOrCreateProfile(userId: string, email: string) {
 }
 
 async function initDatabase() {
-  // Run migrations - Add is_active column to announcements if it doesn't exist
+  // Run migrations
   try {
     const dbUrl = Deno.env.get("SUPABASE_DB_URL");
     if (dbUrl) {
       const sql = postgres(dbUrl);
       await sql`ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`;
       await sql`ALTER TABLE questions ADD COLUMN IF NOT EXISTS show_image BOOLEAN NOT NULL DEFAULT false`;
+      await sql`ALTER TABLE questions ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 1`;
+      await sql`ALTER TABLE questions ADD COLUMN IF NOT EXISTS display_number INTEGER NOT NULL DEFAULT 1`;
+      await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 1`;
+      await sql`ALTER TABLE admin_config ADD COLUMN IF NOT EXISTS active_round_number INTEGER NOT NULL DEFAULT 1`;
       await sql.end();
-      console.log("✓ Database migrations: is_active column added to announcements, show_image added to questions");
+      console.log("✓ Database migrations: Multi-day rounds support added");
     }
   } catch (e) {
     console.log("Migration (non-critical):", e);
@@ -106,30 +110,8 @@ async function initDatabase() {
     console.log("Storage bucket creation (non-critical):", e);
   }
 
-  // Seed questions if empty
-  const { data: existingQuestions } = await supabase
-    .from('questions')
-    .select('id')
-    .limit(1);
-
-  if (!existingQuestions?.length) {
-    await supabase.from('questions').insert([
-      { id: 1, desk_string: 'Desk 402-B', image_url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800' },
-      { id: 2, desk_string: 'Desk 215-A', image_url: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800' },
-      { id: 3, desk_string: 'Desk 108-C', image_url: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800' },
-    ]);
-
-    await supabase.from('answer_pool').insert([
-      { question_id: 1, answer: 'circuit' },
-      { question_id: 1, answer: 'chip' },
-      { question_id: 2, answer: 'keyboard' },
-      { question_id: 3, answer: 'chart' },
-      { question_id: 3, answer: 'graph' },
-      { question_id: 3, answer: 'analytics' },
-    ]);
-
-    console.log("Seeded questions and answers");
-  }
+  // No automatic seeding - admin will upload questions manually
+  console.log("✓ Database ready for admin to upload questions");
 
   // Create admin user if doesn't exist
   try {
@@ -286,25 +268,81 @@ async function handler(req: Request): Promise<Response> {
 
     // /me - Get user profile and game state
     if (path === "/me") {
+      // Get active round number
+      const { data: config } = await supabase
+        .from('admin_config')
+        .select('active_round_number')
+        .order('id', { ascending: false })
+        .limit(1)
+        .single();
+
+      const activeRound = config?.active_round_number || 1;
+
+      // Get total questions for active round
       const { count: totalQuestions } = await supabase
         .from('questions')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .eq('round_number', activeRound);
+
+      // Get user's progress in active round
+      const { count: correctCount } = await supabase
+        .from('submissions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('round_number', activeRound)
+        .eq('is_correct', true);
+
+      const currentDisplayNumber = (correctCount || 0) + 1;
+      // Only mark as finished if there are questions AND user has completed them all
+      const finished = (totalQuestions || 0) > 0 && (correctCount || 0) >= (totalQuestions || 0);
 
       return new Response(
-        JSON.stringify({ profile, totalQuestions }),
+        JSON.stringify({
+          profile: {
+            ...profile,
+            current_display_number: currentDisplayNumber,
+            correct_count: correctCount || 0,
+          },
+          activeRound,
+          totalQuestions: totalQuestions || 0,
+          finished,
+        }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // /question - Get current question
+    // /question - Get current question for active round
     if (path === "/question") {
+      // Get active round
+      const { data: config } = await supabase
+        .from('admin_config')
+        .select('active_round_number')
+        .order('id', { ascending: false })
+        .limit(1)
+        .single();
+
+      const activeRound = config?.active_round_number || 1;
+
+      // Get user's correct count for this round
+      const { count: correctCount } = await supabase
+        .from('submissions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('round_number', activeRound)
+        .eq('is_correct', true);
+
+      const nextDisplayNumber = (correctCount || 0) + 1;
+
+      // Fetch the question for this round and display number
       const { data: question } = await supabase
         .from('questions')
-        .select('id, desk_string, image_url, show_image')
-        .eq('id', profile.current_question)
+        .select('id, desk_string, image_url, show_image, round_number, display_number')
+        .eq('round_number', activeRound)
+        .eq('display_number', nextDisplayNumber)
         .single();
 
       if (!question) {
+        // No more questions for this round
         return new Response(JSON.stringify({ question: null, finished: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -336,6 +374,8 @@ async function handler(req: Request): Promise<Response> {
           desk_string: question.desk_string,
           image_url: imageData,
           show_image: question.show_image,
+          display_number: question.display_number, // CRITICAL: Send display number, not id
+          round_number: question.round_number,
         },
         finished: false
       }), {
@@ -347,11 +387,71 @@ async function handler(req: Request): Promise<Response> {
     if (path === "/submit" && req.method === "POST") {
       const { answer } = await req.json();
 
-      // Get valid answers for current question
+      // Rate limiting: Check submission count in last 1 minute (max 10 submissions/minute)
+      const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
+      const { count: submissionCount, error: submissionCountError } = await supabase
+        .from('submissions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('submitted_at', oneMinuteAgo);
+
+      if (submissionCountError) {
+        console.error('Rate limit check error:', submissionCountError);
+      } else if (submissionCount !== null && submissionCount >= 10) {
+        console.log(`Rate limit exceeded for ${user.email}: ${submissionCount} submissions in last minute`);
+        return new Response(JSON.stringify({
+          correct: false,
+          rateLimited: true,
+          message: "Too many submissions. Please wait before trying again.",
+        }), {
+          status: 429,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get active round
+      const { data: config } = await supabase
+        .from('admin_config')
+        .select('active_round_number')
+        .order('id', { ascending: false })
+        .limit(1)
+        .single();
+
+      const activeRound = config?.active_round_number || 1;
+
+      // Get user's current progress in this round
+      const { count: correctCount } = await supabase
+        .from('submissions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('round_number', activeRound)
+        .eq('is_correct', true);
+
+      const currentDisplayNumber = (correctCount || 0) + 1;
+
+      // Get the current question they're attempting
+      const { data: currentQuestion } = await supabase
+        .from('questions')
+        .select('id')
+        .eq('round_number', activeRound)
+        .eq('display_number', currentDisplayNumber)
+        .single();
+
+      if (!currentQuestion) {
+        return new Response(JSON.stringify({
+          correct: false,
+          error: "No question available for this round"
+        }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get valid answers for this question
       const { data: answers } = await supabase
         .from('answer_pool')
         .select('answer')
-        .eq('question_id', profile.current_question);
+        .eq('question_id', currentQuestion.id);
 
       // Check if answer is correct (case-insensitive, no spaces)
       const normalized = answer?.toLowerCase().replace(/\s+/g, "");
@@ -359,62 +459,97 @@ async function handler(req: Request): Promise<Response> {
         a.answer.toLowerCase().replace(/\s+/g, "") === normalized
       );
 
-      // Record submission
+      // Record submission (APPEND-ONLY - this is the source of truth)
       await supabase.from('submissions').insert({
         user_id: user.id,
-        question_id: profile.current_question,
+        question_id: currentQuestion.id,
+        round_number: activeRound, // CRITICAL: Include round number
         submitted_answer: answer,
         is_correct: isCorrect,
       });
 
       if (!isCorrect) {
-        console.log(`Wrong answer from ${user.email}`);
+        console.log(`Wrong answer from ${user.email} for Round ${activeRound}, Q${currentDisplayNumber}`);
         return new Response(JSON.stringify({ correct: false }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Update progress
-      const { data: updated } = await supabase
-        .from('profiles')
-        .update({
-          current_question: profile.current_question + 1,
-          last_submission_time: new Date().toISOString(),
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
+      // Note: We do NOT update the profile table anymore
+      // Progress is calculated dynamically from the submissions table
+      console.log(`Correct answer from ${user.email} for Round ${activeRound}, Q${currentDisplayNumber}`);
 
-      console.log(`Correct answer from ${user.email}`);
-
-      return new Response(JSON.stringify({ correct: true, profile: updated }), {
+      return new Response(JSON.stringify({ correct: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // /leaderboard - Get all users ranked (exclude admins)
+    // /leaderboard - Get DAILY leaderboard for active round only
     if (path === "/leaderboard") {
-      const { data: profiles } = await supabase
+      // Get active round
+      const { data: config } = await supabase
+        .from('admin_config')
+        .select('active_round_number')
+        .order('id', { ascending: false })
+        .limit(1)
+        .single();
+
+      const activeRound = config?.active_round_number || 1;
+
+      // Get all users with their progress in the ACTIVE round
+      const { data: leaderboardData } = await supabase
         .from('profiles')
-        .select('id, email, current_question, last_submission_time, role')
-        .neq('role', 'admin')
-        .order('current_question', { ascending: false })
-        .order('last_submission_time', { ascending: true });
+        .select('id, email, role')
+        .neq('role', 'admin');
 
-      console.log(`Leaderboard query returned ${profiles?.length || 0} profiles (excluding admins)`);
+      if (!leaderboardData) {
+        return new Response(JSON.stringify({ leaderboard: [], activeRound }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-      // Double-check: filter out any admin that might have slipped through
-      const nonAdminProfiles = profiles?.filter((p: any) => p.role !== 'admin') || [];
+      // For each user, count their correct submissions in the active round
+      const leaderboardPromises = leaderboardData.map(async (user: any) => {
+        const { count: correctCount, data: submissions } = await supabase
+          .from('submissions')
+          .select('submitted_at', { count: 'exact' })
+          .eq('user_id', user.id)
+          .eq('round_number', activeRound)
+          .eq('is_correct', true)
+          .order('submitted_at', { ascending: false })
+          .limit(1);
 
-      const rows = nonAdminProfiles.map((p: any) => ({
-        id: p.id,
-        name: p.email.split("@")[0],
-        current_question: p.current_question,
-      }));
+        const lastCorrectTime = submissions && submissions.length > 0
+          ? submissions[0].submitted_at
+          : null;
 
-      console.log(`Sending ${rows.length} users to leaderboard`);
+        return {
+          id: user.id,
+          name: user.email.split("@")[0],
+          correct_count: correctCount || 0,
+          last_correct_time: lastCorrectTime,
+        };
+      });
 
-      return new Response(JSON.stringify({ leaderboard: rows }), {
+      const leaderboard = await Promise.all(leaderboardPromises);
+
+      // Sort by correct count (desc), then by last correct time (asc)
+      leaderboard.sort((a, b) => {
+        if (b.correct_count !== a.correct_count) {
+          return b.correct_count - a.correct_count;
+        }
+        // If counts are equal, earlier completion time wins
+        if (!a.last_correct_time) return 1;
+        if (!b.last_correct_time) return -1;
+        return new Date(a.last_correct_time).getTime() - new Date(b.last_correct_time).getTime();
+      });
+
+      console.log(`Daily leaderboard for Round ${activeRound}: ${leaderboard.length} users`);
+
+      return new Response(JSON.stringify({
+        leaderboard,
+        activeRound,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -593,8 +728,9 @@ async function handler(req: Request): Promise<Response> {
 
       const { data: questions } = await supabase
         .from('questions')
-        .select('id, desk_string, image_url, show_image')
-        .order('id');
+        .select('id, desk_string, image_url, show_image, round_number, display_number')
+        .order('round_number', { ascending: true })
+        .order('display_number', { ascending: true });
 
       const questionsWithAnswers = await Promise.all(
         (questions || []).map(async (q: any) => {
@@ -702,6 +838,84 @@ async function handler(req: Request): Promise<Response> {
       });
     }
 
+    // /admin/round - Get active round number (admin only)
+    if (path === "/admin/round" && req.method === "GET") {
+      if (profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Admin only" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: config } = await supabase
+        .from('admin_config')
+        .select('active_round_number')
+        .order('id', { ascending: false })
+        .limit(1)
+        .single();
+
+      const activeRound = config?.active_round_number || 1;
+
+      return new Response(JSON.stringify({ active_round_number: activeRound }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // /admin/round - Set active round number (admin only)
+    if (path === "/admin/round" && req.method === "PUT") {
+      if (profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Admin only" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { round_number } = await req.json();
+
+      if (!round_number || round_number < 1) {
+        return new Response(JSON.stringify({ error: "Valid round number required (>= 1)" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Update the active round in admin_config
+      const { data: config } = await supabase
+        .from('admin_config')
+        .select('id')
+        .order('id', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (config) {
+        await supabase
+          .from('admin_config')
+          .update({ active_round_number: round_number })
+          .eq('id', config.id);
+      } else {
+        // Create initial config if it doesn't exist
+        await supabase
+          .from('admin_config')
+          .insert({
+            admin_email: 'system@config',
+            active_round_number: round_number,
+          });
+      }
+
+      console.log(`Admin ${user.email} set active round to ${round_number}`);
+
+      // Broadcast round change via Supabase Realtime
+      await supabase.channel('round-updates').send({
+        type: 'broadcast',
+        event: 'round_changed',
+        payload: { round_number },
+      });
+
+      return new Response(JSON.stringify({ ok: true, active_round_number: round_number }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // /admin/questions - Create a new question (admin only)
     if (path === "/admin/questions" && req.method === "POST") {
       console.log("Hit /admin/questions endpoint");
@@ -713,11 +927,11 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      const { desk_string, answers, image_base64, image_type } = await req.json();
-      console.log("Creating question:", desk_string, "with answers:", answers);
+      const { desk_string, answers, image_base64, image_type, round_number, display_number } = await req.json();
+      console.log("Creating question:", desk_string, "Round:", round_number, "Display:", display_number);
 
-      if (!desk_string || !answers || answers.length === 0) {
-        return new Response(JSON.stringify({ error: "Desk location and at least one answer required" }), {
+      if (!desk_string || !answers || answers.length === 0 || !round_number || !display_number) {
+        return new Response(JSON.stringify({ error: "Desk location, round number, display number, and at least one answer required" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -772,6 +986,8 @@ async function handler(req: Request): Promise<Response> {
           desk_string,
           image_url: imageUrl,
           show_image: false, // Default to not showing
+          round_number: round_number,
+          display_number: display_number,
         })
         .select()
         .single();
