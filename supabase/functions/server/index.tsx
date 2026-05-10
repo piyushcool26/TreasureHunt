@@ -297,7 +297,7 @@ async function handler(req: Request): Promise<Response> {
         .limit(1)
         .single();
 
-      const activeRound = config?.active_round_number || 1;
+      const activeRound = config?.active_round_number ?? 0;
 
       // Get total questions for active round (0 if empty round)
       let totalQuestions = 0;
@@ -346,7 +346,7 @@ async function handler(req: Request): Promise<Response> {
         .limit(1)
         .single();
 
-      const activeRound = config?.active_round_number || 1;
+      const activeRound = config?.active_round_number ?? 0;
 
       // If round is 0 (empty), no questions available
       if (activeRound === 0) {
@@ -449,7 +449,7 @@ async function handler(req: Request): Promise<Response> {
         .limit(1)
         .single();
 
-      const activeRound = config?.active_round_number || 1;
+      const activeRound = config?.active_round_number ?? 0;
 
       // Reject submissions if no round is active
       if (activeRound === 0) {
@@ -537,7 +537,7 @@ async function handler(req: Request): Promise<Response> {
         .limit(1)
         .single();
 
-      const activeRound = config?.active_round_number || 1;
+      const activeRound = config?.active_round_number ?? 0;
 
       // Get all users with their progress in the ACTIVE round
       const { data: leaderboardData } = await supabase
@@ -899,7 +899,7 @@ async function handler(req: Request): Promise<Response> {
         .limit(1)
         .single();
 
-      const activeRound = config?.active_round_number || 1;
+      const activeRound = config?.active_round_number ?? 0;
 
       return new Response(JSON.stringify({ active_round_number: activeRound }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

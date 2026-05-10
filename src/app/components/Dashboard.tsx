@@ -36,14 +36,14 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
   const [questionData, setQuestionData] = useState<QuestionData | null>(null);
-  const [activeRound, setActiveRound] = useState(1);
+  const [activeRound, setActiveRound] = useState(0);
 
   const refresh = useCallback(async () => {
     try {
       const me = await apiFetch("/me", {}, token);
       setProfile(me.profile);
       setTotalQuestions(me.totalQuestions || 0);
-      setActiveRound(me.activeRound || 1);
+      setActiveRound(me.activeRound ?? 0);
       setFinished(me.finished || false);
 
       // Fetch current question data if not finished
@@ -65,7 +65,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
 
       console.log("Leaderboard data received:", lb.leaderboard);
       setLeaderboard(lb.leaderboard || []);
-      setActiveRound(lb.activeRound || activeRound);
+      setActiveRound(lb.activeRound ?? 0);
       setAnnouncements(ann.announcements);
       // Set active announcement to latest active one
       const latestActive = ann.announcements.find((a: Announcement) => a.is_active);

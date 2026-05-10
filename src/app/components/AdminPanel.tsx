@@ -23,7 +23,7 @@ export function AdminPanel({
   const [editingAnn, setEditingAnn] = useState<Announcement | null>(null);
   const [editMessage, setEditMessage] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [activeRound, setActiveRound] = useState(1);
+  const [activeRound, setActiveRound] = useState(0);
   const [loadingRound, setLoadingRound] = useState(false);
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [pendingRound, setPendingRound] = useState<number | null>(null);
@@ -37,7 +37,7 @@ export function AdminPanel({
   async function loadActiveRound() {
     try {
       const data = await apiFetch("/admin/round", {}, token);
-      setActiveRound(data.active_round_number || 1);
+      setActiveRound(data.active_round_number ?? 0);
     } catch (e) {
       console.error("Failed to load active round:", e);
     }
