@@ -2,6 +2,27 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import postgres from "https://deno.land/x/postgresjs@v3.4.3/mod.js";
 
+/**
+ * ⚠️ CRITICAL DATA INTEGRITY POLICY ⚠️
+ *
+ * SUBMISSIONS TABLE IS APPEND-ONLY - NEVER DELETE OR UPDATE
+ *
+ * The submissions table is an immutable audit log that records all user submissions.
+ * It must NEVER be modified or deleted under any circumstances, including:
+ * - When questions are deleted
+ * - When rounds are reset
+ * - When users are removed
+ * - At any time via admin UI or API
+ *
+ * Submission history must be preserved permanently for:
+ * - Audit trails
+ * - Historical data analysis
+ * - Compliance requirements
+ * - Fair play verification
+ *
+ * User progress is calculated dynamically by querying submissions with round_number filter.
+ */
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-user-token",
@@ -874,13 +895,11 @@ async function handler(req: Request): Promise<Response> {
         })
         .neq('role', 'admin'); // Don't reset admin
 
-      // Clear all submissions
-      await supabase
-        .from('submissions')
-        .delete()
-        .neq('user_id', '00000000-0000-0000-0000-000000000000'); // Delete all (dummy condition)
+      // IMPORTANT: DO NOT DELETE SUBMISSIONS - submissions table is append-only audit log
+      // Submission history must be preserved for all rounds
+      // Progress is calculated dynamically from submissions table by filtering on round_number
 
-      console.log(`Admin ${user.email} reset all user progress for new round`);
+      console.log(`Admin ${user.email} reset all user progress (submission history preserved)`);
 
       return new Response(JSON.stringify({ ok: true, message: "All user progress reset successfully" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1111,11 +1130,8 @@ async function handler(req: Request): Promise<Response> {
         .delete()
         .eq('question_id', question_id);
 
-      // Delete associated submissions
-      await supabase
-        .from('submissions')
-        .delete()
-        .eq('question_id', question_id);
+      // IMPORTANT: DO NOT DELETE SUBMISSIONS - submissions table is append-only audit log
+      // Submission history must be preserved even when questions are deleted
 
       // Delete the question
       const { error: deleteError } = await supabase

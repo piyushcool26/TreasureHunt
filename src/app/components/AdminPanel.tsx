@@ -442,13 +442,13 @@ export function AdminPanel({
               </div>
 
               <p className="text-gray-700 mb-6">
-                This will <strong className="text-red-600">permanently delete</strong> all user progress and submissions.
-                All players will start from Question 1 again.
+                This will reset all user progress. All players will start from Question 1 again.
+                <strong className="text-blue-600"> Submission history will be preserved.</strong>
               </p>
 
-              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4 mb-6">
-                <p className="text-sm text-yellow-800 font-medium">
-                  ⚠️ This action cannot be undone!
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-blue-800 font-medium">
+                  ℹ️ Note: Submission records are never deleted - they are kept as an audit log.
                 </p>
               </div>
 
@@ -558,11 +558,11 @@ export function AdminPanel({
               <h3 className="text-xl font-bold text-gray-900">New Round</h3>
             </div>
             <p className="text-gray-700 text-sm mb-3">
-              Start a fresh treasure hunt by resetting all user progress. This will clear all submissions and reset everyone to Question 1.
+              Start a fresh treasure hunt by resetting all user progress. Everyone will restart from Question 1. Submission history is preserved as an audit log.
             </p>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-100 rounded-full text-xs font-semibold text-red-700">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-100 rounded-full text-xs font-semibold text-blue-700">
               <AlertTriangle size={14} />
-              Irreversible action
+              Resets progress (preserves history)
             </div>
           </div>
           <motion.button
