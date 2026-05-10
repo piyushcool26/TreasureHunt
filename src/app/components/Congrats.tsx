@@ -6,11 +6,14 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import * as anime from "animejs";
 
-export function Congrats({ name }: { name: string }) {
+export function Congrats({ name, roundNumber }: { name: string; roundNumber?: number }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  console.log("Congrats component rendering for:", name, "Round:", roundNumber);
+
   useEffect(() => {
+    console.log("Congrats useEffect - Starting confetti animation");
     const end = Date.now() + 5000;
     const colors = ["#4285F4", "#EA4335", "#FBBC05", "#34A853"];
 
@@ -73,7 +76,7 @@ export function Congrats({ name }: { name: string }) {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative bg-white rounded-3xl shadow-2xl p-8 border border-gray-100">
       {/* Floating celebration elements */}
       {[...Array(20)].map((_, i) => (
         <motion.div
@@ -176,7 +179,7 @@ export function Congrats({ name }: { name: string }) {
           transition={{ delay: 1.5 }}
           className="text-2xl text-gray-700 max-w-2xl font-medium"
         >
-          🎉 You've completed all questions in this round! 🎉
+          🎉 You've completed all questions in Round {roundNumber || 1}! 🎉
         </motion.p>
 
         <motion.p
@@ -185,7 +188,7 @@ export function Congrats({ name }: { name: string }) {
           transition={{ delay: 1.8 }}
           className="text-lg text-gray-600 max-w-xl mt-3"
         >
-          Amazing work! Check the leaderboard to see where you stand. Stay tuned for the next round! 🏆
+          Amazing work! Check the leaderboard to see where you stand. {roundNumber && roundNumber > 0 && "Stay tuned for the next round!"} 🏆
         </motion.p>
       </motion.div>
     </div>

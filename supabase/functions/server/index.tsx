@@ -321,6 +321,8 @@ async function handler(req: Request): Promise<Response> {
       // Only mark as finished if there are questions AND user has completed them all
       const finished = (totalQuestions || 0) > 0 && (correctCount || 0) >= (totalQuestions || 0);
 
+      console.log(`User ${user.email} - Round ${activeRound}: ${correctCount}/${totalQuestions} correct, finished: ${finished}`);
+
       return new Response(
         JSON.stringify({
           profile: {

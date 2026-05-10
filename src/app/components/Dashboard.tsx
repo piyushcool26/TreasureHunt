@@ -41,10 +41,12 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const refresh = useCallback(async () => {
     try {
       const me = await apiFetch("/me", {}, token);
+      console.log("User data from /me:", me);
       setProfile(me.profile);
       setTotalQuestions(me.totalQuestions || 0);
       setActiveRound(me.activeRound ?? 0);
       setFinished(me.finished || false);
+      console.log("Finished state:", me.finished, "Total questions:", me.totalQuestions, "Active round:", me.activeRound);
 
       // Fetch current question data if not finished
       if (!me.finished) {
@@ -52,6 +54,13 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
           const questionRes = await apiFetch("/question", {}, token);
           if (questionRes.question) {
             setQuestionData(questionRes.question);
+          } else {
+            // No question available but not marked as finished - check if user has completed all questions
+            console.log("No question available, checking if round is complete");
+            if (questionRes.finished || (me.totalQuestions > 0 && me.profile.correct_count >= me.totalQuestions)) {
+              console.log("User has completed all questions, marking as finished");
+              setFinished(true);
+            }
           }
         } catch (e) {
           console.error("Failed to fetch question:", e);
@@ -177,6 +186,8 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
         token,
       );
       if (res.correct) {
+        // Small delay to ensure database has committed the transaction
+        await new Promise(resolve => setTimeout(resolve, 500));
         await refresh();
         return { correct: true };
       }
@@ -266,35 +277,46 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
           // User View: Answer submission + leaderboard - no question display
           <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
             <div className="lg:col-span-7">
-              {activeRound === 0 || totalQuestions === 0 ? (
-                // No round active or no questions available yet
-                <div className="bg-white rounded-3xl shadow-2xl p-12 border border-gray-100 text-center">
-                  <div className="max-w-md mx-auto">
-                    <div className="mb-6">
-                      <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-[#4285F4] to-[#34A853] flex items-center justify-center">
-                        <span className="text-5xl">🕐</span>
+              {(() => {
+                console.log("Render decision - activeRound:", activeRound, "totalQuestions:", totalQuestions, "finished:", finished);
+
+                if (activeRound === 0 || totalQuestions === 0) {
+                  console.log("Showing waiting message");
+                  return (
+                    // No round active or no questions available yet
+                    <div className="bg-white rounded-3xl shadow-2xl p-12 border border-gray-100 text-center">
+                      <div className="max-w-md mx-auto">
+                        <div className="mb-6">
+                          <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-[#4285F4] to-[#34A853] flex items-center justify-center">
+                            <span className="text-5xl">🕐</span>
+                          </div>
+                        </div>
+                        <h2 className="text-3xl font-bold text-gray-900 mb-4">The round is yet to start</h2>
+                        <p className="text-gray-600 text-lg">
+                          {activeRound === 0
+                            ? "No round is currently active. Please check back soon!"
+                            : `Questions for Round ${activeRound} haven't been uploaded yet. Please check back soon!`
+                          }
+                        </p>
                       </div>
                     </div>
-                    <h2 className="text-3xl font-bold text-gray-900 mb-4">The round is yet to start</h2>
-                    <p className="text-gray-600 text-lg">
-                      {activeRound === 0
-                        ? "No round is currently active. Please check back soon!"
-                        : `Questions for Round ${activeRound} haven't been uploaded yet. Please check back soon!`
-                      }
-                    </p>
-                  </div>
-                </div>
-              ) : finished ? (
-                <Congrats name={namePrefix} />
-              ) : (
-                <AnswerSubmission
-                  currentQuestion={questionData?.display_number || 1}
-                  totalQuestions={totalQuestions}
-                  onSubmit={handleSubmit}
-                  questionImage={questionData?.image_url || null}
-                  roundNumber={activeRound}
-                />
-              )}
+                  );
+                } else if (finished) {
+                  console.log("Showing Congrats component");
+                  return <Congrats name={namePrefix} roundNumber={activeRound} />;
+                } else {
+                  console.log("Showing AnswerSubmission component");
+                  return (
+                    <AnswerSubmission
+                      currentQuestion={questionData?.display_number || 1}
+                      totalQuestions={totalQuestions}
+                      onSubmit={handleSubmit}
+                      questionImage={questionData?.image_url || null}
+                      roundNumber={activeRound}
+                    />
+                  );
+                }
+              })()}
             </div>
             <div className="lg:col-span-3">
               <Leaderboard rows={leaderboard} currentUserId={profile.id} />
