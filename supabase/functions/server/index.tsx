@@ -370,7 +370,7 @@ async function handler(req: Request): Promise<Response> {
       // Fetch the question for this round and display number
       const { data: question } = await supabase
         .from('questions')
-        .select('id, desk_string, image_url, show_image, round_number, display_number')
+        .select('id, image_url, show_image, round_number, display_number')
         .eq('round_number', activeRound)
         .eq('display_number', nextDisplayNumber)
         .single();
@@ -405,7 +405,6 @@ async function handler(req: Request): Promise<Response> {
       return new Response(JSON.stringify({
         question: {
           id: question.id,
-          desk_string: question.desk_string,
           image_url: imageData,
           show_image: question.show_image,
           display_number: question.display_number, // CRITICAL: Send display number, not id
@@ -773,7 +772,7 @@ async function handler(req: Request): Promise<Response> {
 
       const { data: questions } = await supabase
         .from('questions')
-        .select('id, desk_string, image_url, show_image, round_number, display_number')
+        .select('id, image_url, show_image, round_number, display_number')
         .order('round_number', { ascending: true })
         .order('display_number', { ascending: true });
 
@@ -803,9 +802,8 @@ async function handler(req: Request): Promise<Response> {
 
           return {
             id: q.id,
-            desk_string: q.desk_string,
             image_url: signedImageUrl,
-            show_image: q.show_image || false,
+            show_image: q.show_image ?? true,
             round_number: q.round_number || 1,
             display_number: q.display_number || 1,
             answers: answers?.map((a: any) => a.answer) || [],
@@ -983,11 +981,18 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      const { desk_string, answers, image_base64, image_type, round_number, display_number } = await req.json();
-      console.log("Creating question:", desk_string, "Round:", round_number, "Display:", display_number);
+      const { answers, image_base64, image_type, round_number, display_number } = await req.json();
+      console.log("Creating question - Round:", round_number, "Display:", display_number);
 
-      if (!desk_string || !answers || answers.length === 0 || !round_number || !display_number) {
-        return new Response(JSON.stringify({ error: "Desk location, round number, display number, and at least one answer required" }), {
+      if (!image_base64 || !image_type) {
+        return new Response(JSON.stringify({ error: "Question image is required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!answers || answers.length === 0 || !round_number || !display_number) {
+        return new Response(JSON.stringify({ error: "Round number, display number, and at least one answer required" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -1004,35 +1009,40 @@ async function handler(req: Request): Promise<Response> {
       const nextId = (maxIdData?.id || 0) + 1;
       console.log(`Next question ID will be: ${nextId}`);
 
-      // Handle image upload if provided
+      // Handle image upload - REQUIRED
       let imageUrl = null;
-      if (image_base64 && image_type) {
-        try {
-          const bucketName = 'make-0b818758-questions';
-          const fileName = `question_${nextId}_${Date.now()}.${image_type.split('/')[1] || 'png'}`;
+      try {
+        const bucketName = 'make-0b818758-questions';
+        const fileName = `question_${nextId}_${Date.now()}.${image_type.split('/')[1] || 'png'}`;
 
-          // Convert base64 to binary
-          const base64Data = image_base64.split(',')[1] || image_base64;
-          const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        // Convert base64 to binary
+        const base64Data = image_base64.split(',')[1] || image_base64;
+        const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
-          // Upload to Supabase Storage
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from(bucketName)
-            .upload(fileName, binaryData, {
-              contentType: image_type,
-              upsert: false,
-            });
+        // Upload to Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from(bucketName)
+          .upload(fileName, binaryData, {
+            contentType: image_type,
+            upsert: false,
+          });
 
-          if (uploadError) {
-            console.error("Image upload error:", uploadError);
-          } else {
-            // Get the storage URL - we'll create signed URLs when fetching
-            imageUrl = fileName;
-            console.log(`Image uploaded: ${fileName}`);
-          }
-        } catch (e) {
-          console.error("Image processing error:", e);
+        if (uploadError) {
+          console.error("Image upload error:", uploadError);
+          return new Response(JSON.stringify({ error: `Failed to upload image: ${uploadError.message}` }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
+
+        imageUrl = fileName;
+        console.log(`Image uploaded: ${fileName}`);
+      } catch (e) {
+        console.error("Image processing error:", e);
+        return new Response(JSON.stringify({ error: "Failed to process image" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       // Create the question
@@ -1040,9 +1050,8 @@ async function handler(req: Request): Promise<Response> {
         .from('questions')
         .insert({
           id: nextId,
-          desk_string,
           image_url: imageUrl,
-          show_image: false, // Default to not showing
+          show_image: true, // Default to showing
           round_number: round_number,
           display_number: display_number,
         })
@@ -1067,7 +1076,7 @@ async function handler(req: Request): Promise<Response> {
           }))
         );
 
-      console.log(`Admin ${user.email} created new question ${nextId}: ${desk_string}`);
+      console.log(`Admin ${user.email} created new question ${nextId} for Round ${round_number}, Display #${display_number}`);
 
       return new Response(JSON.stringify({ ok: true, question: newQuestion }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

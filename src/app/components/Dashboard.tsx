@@ -260,7 +260,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
               <div className="mb-6">
                 <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Panel</h1>
                 <p className="text-gray-600">
-                  Manage announcements, edit answers, and view game progress. Questions are distributed in person.
+                  Manage announcements, edit answers, and view game progress.
                 </p>
               </div>
               <AdminPanel token={token} announcements={announcements} onRefresh={refresh} />

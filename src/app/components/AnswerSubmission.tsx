@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle, XCircle, Sparkles, AlertCircle } from "lucide-react";
+import { CheckCircle, XCircle, Sparkles } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
@@ -158,14 +158,6 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
             />
           </div>
 
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-gray-600 mt-4"
-          >
-            Enter the answer you discovered at the desk location.
-          </motion.p>
         </div>
 
         {/* Question Image */}
@@ -322,20 +314,6 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
             </span>
           </button>
         </form>
-
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="mt-6 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 shadow-sm"
-        >
-          <div className="flex items-start gap-3">
-            <AlertCircle className="text-blue-600 mt-0.5 flex-shrink-0" size={20} />
-            <p className="text-sm text-blue-900">
-              <strong className="font-semibold">Remember:</strong> Questions are distributed in person at each desk location. This form is only for submitting your discovered answers.
-            </p>
-          </div>
-        </motion.div>
       </div>
     </div>
   );

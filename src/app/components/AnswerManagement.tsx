@@ -5,7 +5,6 @@ import { apiFetch } from "../lib/supabase";
 
 type Question = {
   id: number;
-  desk_string: string;
   image_url: string | null;
   show_image: boolean;
   round_number: number;
@@ -20,7 +19,6 @@ export function AnswerManagement({ token }: { token: string }) {
   const [editingQuestion, setEditingQuestion] = useState<number | null>(null);
   const [newAnswers, setNewAnswers] = useState<{ [key: number]: string }>({});
   const [showNewQuestion, setShowNewQuestion] = useState(false);
-  const [newQuestionDesk, setNewQuestionDesk] = useState("");
   const [newQuestionAnswers, setNewQuestionAnswers] = useState<string[]>([]);
   const [tempAnswer, setTempAnswer] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
@@ -105,8 +103,13 @@ export function AnswerManagement({ token }: { token: string }) {
   }
 
   async function createNewQuestion() {
-    if (!newQuestionDesk.trim() || newQuestionAnswers.length === 0) {
-      alert("Please provide a desk location and at least one answer");
+    if (!selectedImage || !selectedImageType) {
+      alert("Please upload an image for the question");
+      return;
+    }
+
+    if (newQuestionAnswers.length === 0) {
+      alert("Please provide at least one answer");
       return;
     }
 
@@ -122,7 +125,6 @@ export function AnswerManagement({ token }: { token: string }) {
         {
           method: "POST",
           body: JSON.stringify({
-            desk_string: newQuestionDesk.trim(),
             answers: newQuestionAnswers,
             image_base64: selectedImage,
             image_type: selectedImageType,
@@ -134,7 +136,6 @@ export function AnswerManagement({ token }: { token: string }) {
       );
       await loadQuestions();
       setShowNewQuestion(false);
-      setNewQuestionDesk("");
       setNewQuestionAnswers([]);
       setTempAnswer("");
       setSelectedImage(null);
@@ -329,7 +330,6 @@ export function AnswerManagement({ token }: { token: string }) {
                 setShowNewQuestion(false);
                 setSelectedImage(null);
                 setSelectedImageType(null);
-                setNewQuestionDesk("");
                 setNewQuestionAnswers([]);
                 setTempAnswer("");
                 setNewQuestionRound(1);
@@ -381,21 +381,7 @@ export function AnswerManagement({ token }: { token: string }) {
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Desk Location
-                  </label>
-                  <input
-                    type="text"
-                    value={newQuestionDesk}
-                    onChange={(e) => setNewQuestionDesk(e.target.value)}
-                    placeholder="e.g., Desk 402-B"
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#4285F4] focus:ring-4 focus:ring-[#4285F4]/20 outline-none font-medium"
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Question Image (Optional)
+                    Question Image <span className="text-red-500">*</span>
                   </label>
                   <div className="space-y-3">
                     <input
@@ -494,7 +480,6 @@ export function AnswerManagement({ token }: { token: string }) {
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
                     setShowNewQuestion(false);
-                    setNewQuestionDesk("");
                     setNewQuestionAnswers([]);
                     setTempAnswer("");
                     setSelectedImage(null);
@@ -511,7 +496,7 @@ export function AnswerManagement({ token }: { token: string }) {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={createNewQuestion}
-                  disabled={saving || !newQuestionDesk.trim() || newQuestionAnswers.length === 0}
+                  disabled={saving || !selectedImage || newQuestionAnswers.length === 0}
                   className="flex-1 py-3 bg-gradient-to-r from-[#4285F4] to-[#34A853] text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {saving ? (

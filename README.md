@@ -1,7 +1,7 @@
 
-  # Implement Requirements
+  # OTH-Core BLR
 
-  This is a code bundle for Implement Requirements. The original project is available at https://www.figma.com/design/v9fcSPYOVqw4y28RREFDjE/Implement-Requirements.
+  This is a code bundle for OTH-Core BLR. The original project is available at https://www.figma.com/design/v9fcSPYOVqw4y28RREFDjE/OTH-Core-BLR.
 
   ## Running the code
 
