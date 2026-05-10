@@ -41,12 +41,10 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const refresh = useCallback(async () => {
     try {
       const me = await apiFetch("/me", {}, token);
-      console.log("User data from /me:", me);
       setProfile(me.profile);
       setTotalQuestions(me.totalQuestions || 0);
       setActiveRound(me.activeRound ?? 0);
       setFinished(me.finished || false);
-      console.log("Finished state:", me.finished, "Total questions:", me.totalQuestions, "Active round:", me.activeRound);
 
       // Fetch current question data if not finished
       if (!me.finished) {
@@ -56,9 +54,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
             setQuestionData(questionRes.question);
           } else {
             // No question available but not marked as finished - check if user has completed all questions
-            console.log("No question available, checking if round is complete");
             if (questionRes.finished || (me.totalQuestions > 0 && me.profile.correct_count >= me.totalQuestions)) {
-              console.log("User has completed all questions, marking as finished");
               setFinished(true);
             }
           }
@@ -278,10 +274,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
           <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
             <div className="lg:col-span-7">
               {(() => {
-                console.log("Render decision - activeRound:", activeRound, "totalQuestions:", totalQuestions, "finished:", finished);
-
                 if (activeRound === 0 || totalQuestions === 0) {
-                  console.log("Showing waiting message");
                   return (
                     // No round active or no questions available yet
                     <div className="bg-white rounded-3xl shadow-2xl p-12 border border-gray-100 text-center">
@@ -302,10 +295,8 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
                     </div>
                   );
                 } else if (finished) {
-                  console.log("Showing Congrats component");
                   return <Congrats name={namePrefix} roundNumber={activeRound} />;
                 } else {
-                  console.log("Showing AnswerSubmission component");
                   return (
                     <AnswerSubmission
                       currentQuestion={questionData?.display_number || 1}

@@ -4,79 +4,118 @@ import confetti from "canvas-confetti";
 import { Trophy, Star, Sparkles, Award } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import * as anime from "animejs";
 
 export function Congrats({ name, roundNumber }: { name: string; roundNumber?: number }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  console.log("Congrats component rendering for:", name, "Round:", roundNumber);
+  // Simple fallback UI in case of errors
+  const SimpleCongrats = () => (
+    <div className="relative bg-white rounded-3xl shadow-2xl p-8 border border-gray-100 min-h-[400px] flex items-center justify-center">
+      <div className="text-center max-w-2xl">
+        <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-[#FBBC05] via-[#34A853] to-[#4285F4] flex items-center justify-center shadow-2xl">
+          <Trophy size={64} className="text-white" />
+        </div>
+        <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#4285F4] via-[#34A853] to-[#FBBC05] mb-4">
+          Congratulations, {name}!
+        </h1>
+        <p className="text-2xl text-gray-700 max-w-2xl font-medium mb-3">
+          🎉 You've completed all questions in Round {roundNumber || 1}! 🎉
+        </p>
+        <p className="text-lg text-gray-600 max-w-xl">
+          Amazing work! Check the leaderboard to see where you stand. {roundNumber && roundNumber > 0 && "Stay tuned for the next round!"} 🏆
+        </p>
+      </div>
+    </div>
+  );
 
   useEffect(() => {
-    console.log("Congrats useEffect - Starting confetti animation");
-    const end = Date.now() + 5000;
-    const colors = ["#4285F4", "#EA4335", "#FBBC05", "#34A853"];
+    try {
+      const end = Date.now() + 5000;
+      const colors = ["#4285F4", "#EA4335", "#FBBC05", "#34A853"];
 
-    const interval = setInterval(() => {
-      confetti({
-        particleCount: 8,
-        angle: 60,
-        spread: 70,
-        origin: { x: 0, y: 0.8 },
-        colors,
-        ticks: 200,
-        gravity: 1.2,
-        scalar: 1.2,
-      });
-      confetti({
-        particleCount: 8,
-        angle: 120,
-        spread: 70,
-        origin: { x: 1, y: 0.8 },
-        colors,
-        ticks: 200,
-        gravity: 1.2,
-        scalar: 1.2,
-      });
-      confetti({
-        particleCount: 5,
-        angle: 90,
-        spread: 100,
-        origin: { x: 0.5, y: 0.5 },
-        colors,
-        shapes: ["star"],
-        scalar: 1.5,
-      });
-    }, 400);
+      const interval = setInterval(() => {
+        try {
+          confetti({
+            particleCount: 8,
+            angle: 60,
+            spread: 70,
+            origin: { x: 0, y: 0.8 },
+            colors,
+            ticks: 200,
+            gravity: 1.2,
+            scalar: 1.2,
+          });
+          confetti({
+            particleCount: 8,
+            angle: 120,
+            spread: 70,
+            origin: { x: 1, y: 0.8 },
+            colors,
+            ticks: 200,
+            gravity: 1.2,
+            scalar: 1.2,
+          });
+          confetti({
+            particleCount: 5,
+            angle: 90,
+            spread: 100,
+            origin: { x: 0.5, y: 0.5 },
+            colors,
+            shapes: ["star"],
+            scalar: 1.5,
+          });
+        } catch (error) {
+          console.error("Error in confetti animation:", error);
+        }
+      }, 400);
 
-    setTimeout(() => clearInterval(interval), end - Date.now());
+      setTimeout(() => clearInterval(interval), end - Date.now());
 
-    return () => clearInterval(interval);
-  }, []);
-
-  useGSAP(() => {
-    if (titleRef.current) {
-      const text = titleRef.current.textContent || "";
-      titleRef.current.innerHTML = text
-        .split("")
-        .map((char) => `<span class="inline-block">${char === " " ? "&nbsp;" : char}</span>`)
-        .join("");
-
-      anime({
-        targets: titleRef.current.querySelectorAll("span"),
-        translateY: [-50, 0],
-        opacity: [0, 1],
-        scale: [0.3, 1],
-        rotateZ: [180, 0],
-        duration: 800,
-        delay: anime.stagger(50),
-        easing: "easeOutElastic(1, .8)",
-      });
+      return () => clearInterval(interval);
+    } catch (error) {
+      console.error("Error setting up confetti:", error);
     }
   }, []);
 
-  return (
-    <div ref={containerRef} className="relative bg-white rounded-3xl shadow-2xl p-8 border border-gray-100">
+  useGSAP(() => {
+    try {
+      if (titleRef.current) {
+        const text = titleRef.current.textContent || "";
+        titleRef.current.innerHTML = text
+          .split("")
+          .map((char) => `<span class="inline-block">${char === " " ? "&nbsp;" : char}</span>`)
+          .join("");
+
+        const chars = titleRef.current.querySelectorAll("span");
+
+        gsap.fromTo(chars,
+          {
+            y: -50,
+            opacity: 0,
+            scale: 0.3,
+            rotation: 180,
+          },
+          {
+            y: 0,
+            opacity: 1,
+            scale: 1,
+            rotation: 0,
+            duration: 0.8,
+            ease: "elastic.out(1, 0.8)",
+            stagger: 0.05,
+          }
+        );
+      }
+    } catch (error) {
+      console.error("Error in title animation:", error);
+    }
+  }, []);
+
+  // Use try-catch to provide fallback
+  try {
+    return (
+      <div ref={containerRef} className="relative bg-white rounded-3xl shadow-2xl p-8 border border-gray-100 min-h-[400px]">
       {/* Floating celebration elements */}
       {[...Array(20)].map((_, i) => (
         <motion.div
@@ -192,5 +231,9 @@ export function Congrats({ name, roundNumber }: { name: string; roundNumber?: nu
         </motion.p>
       </motion.div>
     </div>
-  );
+    );
+  } catch (error) {
+    console.error("Error rendering Congrats component:", error);
+    return <SimpleCongrats />;
+  }
 }
