@@ -112,8 +112,53 @@ async function initDatabase() {
       // Remove desk_string column completely since we're no longer using desk locations
       await sql`ALTER TABLE questions DROP COLUMN IF EXISTS desk_string`;
 
+      // CRITICAL: Remove CASCADE delete constraint from submissions table
+      // This prevents submissions from being deleted when questions are deleted
+      // Submissions must be preserved as an immutable audit log
+      try {
+        // Make question_id nullable so we can use SET NULL on delete
+        await sql`ALTER TABLE submissions ALTER COLUMN question_id DROP NOT NULL`;
+        console.log("✓ Made submissions.question_id nullable");
+
+        // Drop the existing foreign key constraint with CASCADE
+        await sql`
+          DO $$
+          DECLARE
+            constraint_name_var text;
+          BEGIN
+            -- Find the constraint name dynamically
+            SELECT conname INTO constraint_name_var
+            FROM pg_constraint
+            WHERE conrelid = 'submissions'::regclass
+            AND confrelid = 'questions'::regclass
+            AND contype = 'f'
+            LIMIT 1;
+
+            -- Drop it if found
+            IF constraint_name_var IS NOT NULL THEN
+              EXECUTE 'ALTER TABLE submissions DROP CONSTRAINT IF EXISTS ' || quote_ident(constraint_name_var) || ' CASCADE';
+              RAISE NOTICE 'Dropped constraint: %', constraint_name_var;
+            END IF;
+          END $$;
+        `;
+        console.log("✓ Dropped old foreign key constraint");
+
+        // Recreate the foreign key with SET NULL on delete
+        // This preserves submission records even when questions are deleted
+        await sql`
+          ALTER TABLE submissions
+          ADD CONSTRAINT submissions_question_id_fkey_preserve
+          FOREIGN KEY (question_id)
+          REFERENCES questions(id)
+          ON DELETE SET NULL
+        `;
+        console.log("✓ Created new foreign key with ON DELETE SET NULL - submissions are now protected!");
+      } catch (fkError) {
+        console.log("Foreign key migration (non-critical):", fkError);
+      }
+
       await sql.end();
-      console.log("✓ Database migrations: Multi-day rounds support added, desk_string column removed");
+      console.log("✓ Database migrations: Multi-day rounds support added, desk_string removed, submissions protected");
     }
   } catch (e) {
     console.log("Migration (non-critical):", e);
