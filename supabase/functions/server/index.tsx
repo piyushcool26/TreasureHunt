@@ -211,7 +211,7 @@ async function initDatabase() {
     if (!adminUser?.user) {
       const { data: newAdmin } = await supabase.auth.admin.createUser({
         email: ADMIN_EMAIL,
-        password: "admin123",
+        password: "gangadharhishaktimanhai",
         email_confirm: true,
       });
 
@@ -986,7 +986,7 @@ async function handler(req: Request): Promise<Response> {
       const { round_number, admin_password } = await req.json();
 
       // Validate password
-      if (!admin_password || admin_password !== "admin123") {
+      if (!admin_password || admin_password !== "gangadharhishaktimanhai") {
         return new Response(JSON.stringify({ error: "Invalid password" }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
