@@ -144,7 +144,7 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
               animate={{ opacity: 1, scale: 1 }}
               className="px-4 py-2 bg-gradient-to-r from-[#4285F4] to-[#34A853] text-white rounded-full text-sm font-semibold shadow-lg"
             >
-              Round {roundNumber} - Question {currentQuestion} / {totalQuestions}
+              {roundNumber === 0 ? "Empty Round" : `Round ${roundNumber}`} - Question {currentQuestion} / {totalQuestions}
             </motion.div>
           </div>
 

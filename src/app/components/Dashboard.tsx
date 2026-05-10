@@ -266,8 +266,8 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
           // User View: Answer submission + leaderboard - no question display
           <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
             <div className="lg:col-span-7">
-              {totalQuestions === 0 ? (
-                // No questions available yet
+              {activeRound === 0 || totalQuestions === 0 ? (
+                // No round active or no questions available yet
                 <div className="bg-white rounded-3xl shadow-2xl p-12 border border-gray-100 text-center">
                   <div className="max-w-md mx-auto">
                     <div className="mb-6">
@@ -277,7 +277,10 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
                     </div>
                     <h2 className="text-3xl font-bold text-gray-900 mb-4">The round is yet to start</h2>
                     <p className="text-gray-600 text-lg">
-                      Questions for Round {activeRound} haven't been uploaded yet. Please check back soon!
+                      {activeRound === 0
+                        ? "No round is currently active. Please check back soon!"
+                        : `Questions for Round ${activeRound} haven't been uploaded yet. Please check back soon!`
+                      }
                     </p>
                   </div>
                 </div>

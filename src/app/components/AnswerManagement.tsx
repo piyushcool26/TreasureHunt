@@ -8,6 +8,8 @@ type Question = {
   desk_string: string;
   image_url: string | null;
   show_image: boolean;
+  round_number: number;
+  display_number: number;
   answers: string[];
 };
 
@@ -26,6 +28,8 @@ export function AnswerManagement({ token }: { token: string }) {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedImageType, setSelectedImageType] = useState<string | null>(null);
   const [togglingImage, setTogglingImage] = useState<number | null>(null);
+  const [newQuestionRound, setNewQuestionRound] = useState(1);
+  const [newQuestionDisplay, setNewQuestionDisplay] = useState(1);
 
   useEffect(() => {
     loadQuestions();
@@ -106,6 +110,11 @@ export function AnswerManagement({ token }: { token: string }) {
       return;
     }
 
+    if (newQuestionRound < 1 || newQuestionDisplay < 1) {
+      alert("Round number and display number must be at least 1");
+      return;
+    }
+
     setSaving(true);
     try {
       await apiFetch(
@@ -117,6 +126,8 @@ export function AnswerManagement({ token }: { token: string }) {
             answers: newQuestionAnswers,
             image_base64: selectedImage,
             image_type: selectedImageType,
+            round_number: newQuestionRound,
+            display_number: newQuestionDisplay,
           }),
         },
         token
@@ -128,9 +139,11 @@ export function AnswerManagement({ token }: { token: string }) {
       setTempAnswer("");
       setSelectedImage(null);
       setSelectedImageType(null);
+      setNewQuestionRound(1);
+      setNewQuestionDisplay(1);
     } catch (e) {
       console.error("Failed to create question:", e);
-      alert("Failed to create question");
+      alert("Failed to create question: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setSaving(false);
     }
@@ -319,6 +332,8 @@ export function AnswerManagement({ token }: { token: string }) {
                 setNewQuestionDesk("");
                 setNewQuestionAnswers([]);
                 setTempAnswer("");
+                setNewQuestionRound(1);
+                setNewQuestionDisplay(1);
               }
             }}
           >
@@ -337,6 +352,33 @@ export function AnswerManagement({ token }: { token: string }) {
               </div>
 
               <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Round Number
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newQuestionRound}
+                      onChange={(e) => setNewQuestionRound(parseInt(e.target.value) || 1)}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#4285F4] focus:ring-4 focus:ring-[#4285F4]/20 outline-none font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Display Number
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newQuestionDisplay}
+                      onChange={(e) => setNewQuestionDisplay(parseInt(e.target.value) || 1)}
+                      className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#4285F4] focus:ring-4 focus:ring-[#4285F4]/20 outline-none font-medium"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Desk Location
@@ -457,6 +499,8 @@ export function AnswerManagement({ token }: { token: string }) {
                     setTempAnswer("");
                     setSelectedImage(null);
                     setSelectedImageType(null);
+                    setNewQuestionRound(1);
+                    setNewQuestionDisplay(1);
                   }}
                   disabled={saving}
                   className="flex-1 py-3 bg-gray-200 text-gray-800 rounded-xl font-semibold hover:bg-gray-300 transition disabled:opacity-50"
@@ -506,6 +550,9 @@ export function AnswerManagement({ token }: { token: string }) {
               <div className="flex-1">
                 <h3 className="font-bold text-lg text-gray-900 mb-2">
                   <span className="text-[#4285F4]">Question {q.id}</span>
+                  <span className="ml-2 text-sm text-gray-600">
+                    (Round {q.round_number || 1}, Display #{q.display_number || 1})
+                  </span>
                 </h3>
 
                 {/* Image Preview and Toggle */}

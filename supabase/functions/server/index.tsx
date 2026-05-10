@@ -113,6 +113,27 @@ async function initDatabase() {
   // No automatic seeding - admin will upload questions manually
   console.log("✓ Database ready for admin to upload questions");
 
+  // Initialize admin_config with round 0 (empty) if it doesn't exist
+  try {
+    const { data: existingConfig } = await supabase
+      .from('admin_config')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    if (!existingConfig) {
+      await supabase
+        .from('admin_config')
+        .insert({
+          admin_email: 'system@config',
+          active_round_number: 0, // Start with empty round
+        });
+      console.log("✓ Admin config initialized with Empty round");
+    }
+  } catch (e) {
+    console.log("Admin config initialization (non-critical):", e);
+  }
+
   // Create admin user if doesn't exist
   try {
     const { data: adminUser } = await supabase.auth.admin.getUserByEmail(ADMIN_EMAIL);
@@ -278,11 +299,15 @@ async function handler(req: Request): Promise<Response> {
 
       const activeRound = config?.active_round_number || 1;
 
-      // Get total questions for active round
-      const { count: totalQuestions } = await supabase
-        .from('questions')
-        .select('*', { count: 'exact', head: true })
-        .eq('round_number', activeRound);
+      // Get total questions for active round (0 if empty round)
+      let totalQuestions = 0;
+      if (activeRound > 0) {
+        const { count } = await supabase
+          .from('questions')
+          .select('*', { count: 'exact', head: true })
+          .eq('round_number', activeRound);
+        totalQuestions = count || 0;
+      }
 
       // Get user's progress in active round
       const { count: correctCount } = await supabase
@@ -322,6 +347,13 @@ async function handler(req: Request): Promise<Response> {
         .single();
 
       const activeRound = config?.active_round_number || 1;
+
+      // If round is 0 (empty), no questions available
+      if (activeRound === 0) {
+        return new Response(JSON.stringify({ question: null, finished: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       // Get user's correct count for this round
       const { count: correctCount } = await supabase
@@ -418,6 +450,17 @@ async function handler(req: Request): Promise<Response> {
         .single();
 
       const activeRound = config?.active_round_number || 1;
+
+      // Reject submissions if no round is active
+      if (activeRound === 0) {
+        return new Response(JSON.stringify({
+          correct: false,
+          error: "No round is currently active"
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       // Get user's current progress in this round
       const { count: correctCount } = await supabase
@@ -761,6 +804,8 @@ async function handler(req: Request): Promise<Response> {
             desk_string: q.desk_string,
             image_url: signedImageUrl,
             show_image: q.show_image || false,
+            round_number: q.round_number || 1,
+            display_number: q.display_number || 1,
             answers: answers?.map((a: any) => a.answer) || [],
           };
         })
@@ -870,10 +915,19 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      const { round_number } = await req.json();
+      const { round_number, admin_password } = await req.json();
 
-      if (!round_number || round_number < 1) {
-        return new Response(JSON.stringify({ error: "Valid round number required (>= 1)" }), {
+      // Validate password
+      if (!admin_password || admin_password !== "admin123") {
+        return new Response(JSON.stringify({ error: "Invalid password" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Allow round 0 for "Empty" state (no round active)
+      if (round_number === undefined || round_number === null || round_number < 0) {
+        return new Response(JSON.stringify({ error: "Valid round number required (>= 0)" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -938,14 +992,15 @@ async function handler(req: Request): Promise<Response> {
       }
 
       // Get the next question ID
-      const { data: maxIdData } = await supabase
+      const { data: maxIdData, error: maxIdError } = await supabase
         .from('questions')
         .select('id')
         .order('id', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle(); // Use maybeSingle instead of single to handle empty table
 
       const nextId = (maxIdData?.id || 0) + 1;
+      console.log(`Next question ID will be: ${nextId}`);
 
       // Handle image upload if provided
       let imageUrl = null;
@@ -994,7 +1049,7 @@ async function handler(req: Request): Promise<Response> {
 
       if (questionError) {
         console.error("Question creation error:", questionError);
-        return new Response(JSON.stringify({ error: "Failed to create question" }), {
+        return new Response(JSON.stringify({ error: `Failed to create question: ${questionError.message}` }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

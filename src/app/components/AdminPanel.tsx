@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Send, Megaphone, RotateCcw, AlertTriangle, Trash2, Edit2, Power, PowerOff } from "lucide-react";
+import { Send, Megaphone, RotateCcw, AlertTriangle, Trash2, Edit2, Power, PowerOff, Calendar } from "lucide-react";
 import { apiFetch } from "../lib/supabase";
 import { AnswerManagement } from "./AnswerManagement";
 
@@ -23,6 +23,78 @@ export function AdminPanel({
   const [editingAnn, setEditingAnn] = useState<Announcement | null>(null);
   const [editMessage, setEditMessage] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [activeRound, setActiveRound] = useState(1);
+  const [loadingRound, setLoadingRound] = useState(false);
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [pendingRound, setPendingRound] = useState<number | null>(null);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+
+  useEffect(() => {
+    loadActiveRound();
+  }, []);
+
+  async function loadActiveRound() {
+    try {
+      const data = await apiFetch("/admin/round", {}, token);
+      setActiveRound(data.active_round_number || 1);
+    } catch (e) {
+      console.error("Failed to load active round:", e);
+    }
+  }
+
+  function requestRoundChange(roundNumber: number) {
+    setPendingRound(roundNumber);
+    setShowPasswordPrompt(true);
+    setAdminPassword("");
+    setPasswordError("");
+  }
+
+  async function confirmRoundChange() {
+    if (!adminPassword.trim()) {
+      setPasswordError("Password is required");
+      return;
+    }
+
+    setLoadingRound(true);
+    setPasswordError("");
+
+    try {
+      await apiFetch(
+        "/admin/round",
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            round_number: pendingRound,
+            admin_password: adminPassword
+          }),
+        },
+        token
+      );
+      setActiveRound(pendingRound!);
+      setShowPasswordPrompt(false);
+      setAdminPassword("");
+      setPendingRound(null);
+      onRefresh();
+    } catch (e) {
+      console.error("Failed to update active round:", e);
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      if (errorMsg.includes("Invalid password") || errorMsg.includes("Unauthorized")) {
+        setPasswordError("Invalid admin password");
+      } else {
+        setPasswordError("Failed to update round: " + errorMsg);
+      }
+    } finally {
+      setLoadingRound(false);
+    }
+  }
+
+  function cancelRoundChange() {
+    setShowPasswordPrompt(false);
+    setAdminPassword("");
+    setPendingRound(null);
+    setPasswordError("");
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -137,6 +209,109 @@ export function AdminPanel({
 
   return (
     <div className="space-y-6">
+      {/* Password Confirmation Modal for Round Change */}
+      <AnimatePresence>
+        {showPasswordPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+            onClick={() => !loadingRound && cancelRoundChange()}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                  <AlertTriangle className="text-blue-600" size={24} />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900">Confirm Round Change</h3>
+              </div>
+
+              <p className="text-gray-700 mb-4">
+                You are about to change the active round to:{" "}
+                <strong className="text-blue-600">
+                  {pendingRound === 0 ? "Empty (No round active)" : `Round ${pendingRound}`}
+                </strong>
+              </p>
+
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4 mb-6">
+                <p className="text-sm text-yellow-800 font-medium">
+                  ⚠️ This will immediately change what users see. Please enter your admin password to confirm.
+                </p>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Admin Password
+                </label>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="Enter admin password"
+                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none"
+                  autoFocus
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter" && adminPassword.trim() && !loadingRound) {
+                      confirmRoundChange();
+                    }
+                  }}
+                  disabled={loadingRound}
+                />
+                {passwordError && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-sm text-red-600 mt-2 font-medium"
+                  >
+                    {passwordError}
+                  </motion.p>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={cancelRoundChange}
+                  disabled={loadingRound}
+                  className="flex-1 py-3 bg-gray-200 text-gray-800 rounded-xl font-semibold hover:bg-gray-300 transition disabled:opacity-50"
+                >
+                  Cancel
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={confirmRoundChange}
+                  disabled={loadingRound || !adminPassword.trim()}
+                  className="flex-1 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loadingRound ? (
+                    <>
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      >
+                        ⏳
+                      </motion.div>
+                      Updating...
+                    </>
+                  ) : (
+                    "Confirm Change"
+                  )}
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Edit Announcement Modal */}
       <AnimatePresence>
         {editingAnn && (
@@ -316,6 +491,59 @@ export function AdminPanel({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Active Round Selector */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-2xl p-6 shadow-lg"
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar className="text-blue-600" size={24} />
+              <h3 className="text-xl font-bold text-gray-900">Active Round</h3>
+            </div>
+            <p className="text-gray-700 text-sm mb-3">
+              Select which round is currently active. Users will see questions only for the active round. Set to "Empty" when no round should be active.
+            </p>
+            <div className="bg-blue-100 border-2 border-blue-200 rounded-xl p-3 mb-2">
+              <p className="text-xs text-blue-800">
+                <strong>Note:</strong> Changing the active round requires admin password confirmation.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-gray-700">Current:</span>
+            <div className="px-4 py-2 bg-blue-100 border-2 border-blue-300 rounded-xl font-bold text-blue-700">
+              {activeRound === 0 ? "Empty" : `Round ${activeRound}`}
+            </div>
+            <span className="text-sm font-semibold text-gray-700">Change to:</span>
+            <select
+              value={activeRound}
+              onChange={(e) => requestRoundChange(parseInt(e.target.value))}
+              disabled={loadingRound}
+              className="px-4 py-2 bg-white border-2 border-blue-300 rounded-xl font-bold text-blue-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition disabled:opacity-50 cursor-pointer"
+            >
+              <option value={0}>Empty (No round active)</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                <option key={num} value={num}>
+                  Round {num}
+                </option>
+              ))}
+            </select>
+            {loadingRound && (
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                className="text-blue-600"
+              >
+                ⏳
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </motion.div>
 
       {/* Reset Button */}
       <motion.div
