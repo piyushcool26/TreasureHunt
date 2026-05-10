@@ -87,8 +87,12 @@ async function initDatabase() {
       await sql`ALTER TABLE questions ADD COLUMN IF NOT EXISTS display_number INTEGER NOT NULL DEFAULT 1`;
       await sql`ALTER TABLE submissions ADD COLUMN IF NOT EXISTS round_number INTEGER NOT NULL DEFAULT 1`;
       await sql`ALTER TABLE admin_config ADD COLUMN IF NOT EXISTS active_round_number INTEGER NOT NULL DEFAULT 1`;
+
+      // Remove desk_string column completely since we're no longer using desk locations
+      await sql`ALTER TABLE questions DROP COLUMN IF EXISTS desk_string`;
+
       await sql.end();
-      console.log("✓ Database migrations: Multi-day rounds support added");
+      console.log("✓ Database migrations: Multi-day rounds support added, desk_string column removed");
     }
   } catch (e) {
     console.log("Migration (non-critical):", e);

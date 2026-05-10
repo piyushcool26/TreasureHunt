@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { MapPin, Send, CheckCircle2, XCircle } from "lucide-react";
+import { Send, XCircle } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 
-type Q = { id: number; desk_string: string; image_url: string };
+type Q = { id: number; image_url: string };
 
 export function QuestionCard({
   question,
@@ -40,16 +40,12 @@ export function QuestionCard({
         className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden"
       >
         <div className="p-6 md:p-8">
-          <div className="flex items-center justify-between mb-2">
+          <div className="mb-2">
             <span className="text-xs tracking-wider uppercase text-[#4285F4]">
               Question {question.id}
             </span>
-            <div className="flex items-center gap-1.5 text-sm text-gray-600">
-              <MapPin size={16} className="text-[#EA4335]" />
-              {question.desk_string}
-            </div>
           </div>
-          <h2 className="text-2xl text-gray-900 mb-6">Find the clue</h2>
+          <h2 className="text-2xl text-gray-900 mb-6">Find the answer</h2>
           <div className="rounded-2xl overflow-hidden bg-[#F8F9FA] mb-6 aspect-video">
             <ImageWithFallback
               src={question.image_url}

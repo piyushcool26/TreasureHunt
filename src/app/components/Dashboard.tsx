@@ -21,7 +21,6 @@ type Announcement = { id: string; message: string; created_at: string; is_active
 
 type QuestionData = {
   id: number;
-  desk_string: string;
   image_url: string | null;
   show_image: boolean;
   display_number: number;
