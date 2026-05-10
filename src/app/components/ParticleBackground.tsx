@@ -32,7 +32,7 @@ export function ParticleBackground() {
 
     const colors = ["#4285F4", "#34A853", "#FBBC05", "#EA4335"];
 
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 25; i++) {
       const baseVx = (Math.random() - 0.5) * 0.5;
       const baseVy = (Math.random() - 0.5) * 0.5;
       particles.push({
@@ -53,21 +53,6 @@ export function ParticleBackground() {
       if (!ctx || !canvas) return;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw mouse gradient glow
-      const gradient = ctx.createRadialGradient(
-        mouse.x,
-        mouse.y,
-        0,
-        mouse.x,
-        mouse.y,
-        mouse.radius
-      );
-      gradient.addColorStop(0, "rgba(66, 133, 244, 0.15)");
-      gradient.addColorStop(0.5, "rgba(52, 168, 83, 0.08)");
-      gradient.addColorStop(1, "rgba(251, 188, 5, 0)");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       particles.forEach((particle) => {
         // Calculate distance to mouse
@@ -101,45 +86,27 @@ export function ParticleBackground() {
           particle.baseVy *= -1;
         }
 
-        // Particle glow effect based on distance to mouse
-        const glowIntensity = distance < mouse.radius ? (1 - distance / mouse.radius) * 0.5 : 0;
-
         ctx.beginPath();
         ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
         ctx.fillStyle = particle.color;
-        ctx.globalAlpha = 0.6 + glowIntensity;
+        ctx.globalAlpha = 0.6;
         ctx.fill();
-
-        // Add glow ring when near mouse
-        if (glowIntensity > 0.2) {
-          ctx.beginPath();
-          ctx.arc(particle.x, particle.y, particle.radius + 2, 0, Math.PI * 2);
-          ctx.strokeStyle = particle.color;
-          ctx.globalAlpha = glowIntensity * 0.4;
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
       });
 
-      // Draw connections
+      // Draw connections (simplified)
       particles.forEach((p1, i) => {
         particles.slice(i + 1).forEach((p2) => {
           const dx = p1.x - p2.x;
           const dy = p1.y - p2.y;
           const distance = Math.sqrt(dx * dx + dy * dy);
 
-          if (distance < 150) {
-            // Check if either particle is near mouse
-            const d1 = Math.sqrt((mouse.x - p1.x) ** 2 + (mouse.y - p1.y) ** 2);
-            const d2 = Math.sqrt((mouse.x - p2.x) ** 2 + (mouse.y - p2.y) ** 2);
-            const nearMouse = d1 < mouse.radius || d2 < mouse.radius;
-
+          if (distance < 120) {
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
             ctx.lineTo(p2.x, p2.y);
             ctx.strokeStyle = p1.color;
-            ctx.globalAlpha = ((150 - distance) / 150) * (nearMouse ? 0.4 : 0.2);
-            ctx.lineWidth = nearMouse ? 2 : 1;
+            ctx.globalAlpha = ((120 - distance) / 120) * 0.15;
+            ctx.lineWidth = 1;
             ctx.stroke();
           }
         });

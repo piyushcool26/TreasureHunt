@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import { motion } from "motion/react";
 import { LogOut } from "lucide-react";
 import { supabase, apiFetch } from "../lib/supabase";
 import { AnswerSubmission } from "./AnswerSubmission";
@@ -19,6 +18,13 @@ type Profile = {
 
 type Announcement = { id: string; message: string; created_at: string; is_active: boolean };
 
+type QuestionData = {
+  id: number;
+  desk_string: string;
+  image_url: string | null;
+  show_image: boolean;
+};
+
 export function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [totalQuestions, setTotalQuestions] = useState(0);
@@ -26,6 +32,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [activeAnn, setActiveAnn] = useState<Announcement | null>(null);
+  const [questionData, setQuestionData] = useState<QuestionData | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -34,7 +41,20 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
       setTotalQuestions(me.totalQuestions);
 
       // Check if finished
-      setFinished(me.profile.current_question > me.totalQuestions);
+      const isFinished = me.profile.current_question > me.totalQuestions;
+      setFinished(isFinished);
+
+      // Fetch current question data if not finished
+      if (!isFinished) {
+        try {
+          const questionRes = await apiFetch("/question", {}, token);
+          if (questionRes.question) {
+            setQuestionData(questionRes.question);
+          }
+        } catch (e) {
+          console.error("Failed to fetch question:", e);
+        }
+      }
 
       const [lb, ann] = await Promise.all([
         apiFetch("/leaderboard", {}, token),
@@ -70,6 +90,39 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Realtime question updates - refresh question data when it changes
+  useEffect(() => {
+    if (!profile || finished) return;
+
+    const channel = supabase
+      .channel('questions-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'questions',
+          filter: `id=eq.${profile.current_question}`,
+        },
+        async () => {
+          // Re-fetch question data when it's updated
+          try {
+            const questionRes = await apiFetch("/question", {}, token);
+            if (questionRes.question) {
+              setQuestionData(questionRes.question);
+            }
+          } catch (e) {
+            console.error("Failed to refresh question:", e);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile, finished, token]);
 
   // Periodic leaderboard refresh
   useEffect(() => {
@@ -141,14 +194,12 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
               Admin
             </span>
           )}
-          <motion.button
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.96 }}
+          <button
             onClick={logout}
             className="p-2 rounded-lg text-gray-500 hover:text-[#EA4335] hover:bg-red-50 transition"
           >
             <LogOut size={18} />
-          </motion.button>
+          </button>
         </div>
       </nav>
 
@@ -180,6 +231,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
                   currentQuestion={profile.current_question}
                   totalQuestions={totalQuestions}
                   onSubmit={handleSubmit}
+                  questionImage={questionData?.image_url || null}
                 />
               )}
             </div>

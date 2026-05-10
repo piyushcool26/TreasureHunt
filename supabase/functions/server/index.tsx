@@ -82,11 +82,28 @@ async function initDatabase() {
     if (dbUrl) {
       const sql = postgres(dbUrl);
       await sql`ALTER TABLE announcements ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`;
+      await sql`ALTER TABLE questions ADD COLUMN IF NOT EXISTS show_image BOOLEAN NOT NULL DEFAULT false`;
       await sql.end();
-      console.log("✓ Database migration: is_active column added to announcements");
+      console.log("✓ Database migrations: is_active column added to announcements, show_image added to questions");
     }
   } catch (e) {
     console.log("Migration (non-critical):", e);
+  }
+
+  // Create storage bucket for question images if it doesn't exist
+  try {
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const bucketName = 'make-0b818758-questions';
+    const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
+    if (!bucketExists) {
+      await supabase.storage.createBucket(bucketName, {
+        public: false,
+        fileSizeLimit: 5242880, // 5MB limit
+      });
+      console.log(`✓ Storage bucket created: ${bucketName}`);
+    }
+  } catch (e) {
+    console.log("Storage bucket creation (non-critical):", e);
   }
 
   // Seed questions if empty
@@ -283,7 +300,7 @@ async function handler(req: Request): Promise<Response> {
     if (path === "/question") {
       const { data: question } = await supabase
         .from('questions')
-        .select('id, desk_string, image_url')
+        .select('id, desk_string, image_url, show_image')
         .eq('id', profile.current_question)
         .single();
 
@@ -293,7 +310,35 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      return new Response(JSON.stringify({ question, finished: false }), {
+      // For users, only include image if show_image is true
+      // For admins, always include image
+      let imageData = null;
+      const isAdmin = profile.role === 'admin';
+
+      if (question.image_url && (isAdmin || question.show_image)) {
+        try {
+          const bucketName = 'make-0b818758-questions';
+          const { data: signedUrlData } = await supabase.storage
+            .from(bucketName)
+            .createSignedUrl(question.image_url, 3600); // 1 hour expiry
+
+          if (signedUrlData) {
+            imageData = signedUrlData.signedUrl;
+          }
+        } catch (e) {
+          console.error("Error creating signed URL:", e);
+        }
+      }
+
+      return new Response(JSON.stringify({
+        question: {
+          id: question.id,
+          desk_string: question.desk_string,
+          image_url: imageData,
+          show_image: question.show_image,
+        },
+        finished: false
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -323,7 +368,7 @@ async function handler(req: Request): Promise<Response> {
       });
 
       if (!isCorrect) {
-        console.log(`Wrong answer from ${user.email}: "${answer}"`);
+        console.log(`Wrong answer from ${user.email}`);
         return new Response(JSON.stringify({ correct: false }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -548,7 +593,7 @@ async function handler(req: Request): Promise<Response> {
 
       const { data: questions } = await supabase
         .from('questions')
-        .select('id, desk_string')
+        .select('id, desk_string, image_url, show_image')
         .order('id');
 
       const questionsWithAnswers = await Promise.all(
@@ -558,9 +603,28 @@ async function handler(req: Request): Promise<Response> {
             .select('answer')
             .eq('question_id', q.id);
 
+          // Get signed URL for image if it exists
+          let signedImageUrl = null;
+          if (q.image_url) {
+            try {
+              const bucketName = 'make-0b818758-questions';
+              const { data: signedUrlData } = await supabase.storage
+                .from(bucketName)
+                .createSignedUrl(q.image_url, 3600);
+
+              if (signedUrlData) {
+                signedImageUrl = signedUrlData.signedUrl;
+              }
+            } catch (e) {
+              console.error("Error creating signed URL:", e);
+            }
+          }
+
           return {
             id: q.id,
             desk_string: q.desk_string,
+            image_url: signedImageUrl,
+            show_image: q.show_image || false,
             answers: answers?.map((a: any) => a.answer) || [],
           };
         })
@@ -649,7 +713,7 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      const { desk_string, answers } = await req.json();
+      const { desk_string, answers, image_base64, image_type } = await req.json();
       console.log("Creating question:", desk_string, "with answers:", answers);
 
       if (!desk_string || !answers || answers.length === 0) {
@@ -669,13 +733,45 @@ async function handler(req: Request): Promise<Response> {
 
       const nextId = (maxIdData?.id || 0) + 1;
 
+      // Handle image upload if provided
+      let imageUrl = null;
+      if (image_base64 && image_type) {
+        try {
+          const bucketName = 'make-0b818758-questions';
+          const fileName = `question_${nextId}_${Date.now()}.${image_type.split('/')[1] || 'png'}`;
+
+          // Convert base64 to binary
+          const base64Data = image_base64.split(',')[1] || image_base64;
+          const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+          // Upload to Supabase Storage
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from(bucketName)
+            .upload(fileName, binaryData, {
+              contentType: image_type,
+              upsert: false,
+            });
+
+          if (uploadError) {
+            console.error("Image upload error:", uploadError);
+          } else {
+            // Get the storage URL - we'll create signed URLs when fetching
+            imageUrl = fileName;
+            console.log(`Image uploaded: ${fileName}`);
+          }
+        } catch (e) {
+          console.error("Image processing error:", e);
+        }
+      }
+
       // Create the question
       const { data: newQuestion, error: questionError } = await supabase
         .from('questions')
         .insert({
           id: nextId,
           desk_string,
-          image_url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800',
+          image_url: imageUrl,
+          show_image: false, // Default to not showing
         })
         .select()
         .single();
@@ -752,6 +848,44 @@ async function handler(req: Request): Promise<Response> {
       console.log(`Admin ${user.email} deleted question ${question_id}`);
 
       return new Response(JSON.stringify({ ok: true, message: "Question deleted successfully" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // /admin/questions - Toggle show_image for a question (admin only)
+    if (path === "/admin/questions" && req.method === "PUT") {
+      if (profile.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Admin only" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { question_id, show_image } = await req.json();
+
+      if (!question_id || show_image === undefined) {
+        return new Response(JSON.stringify({ error: "Question ID and show_image status required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error: updateError } = await supabase
+        .from('questions')
+        .update({ show_image })
+        .eq('id', question_id);
+
+      if (updateError) {
+        console.error("Question update error:", updateError);
+        return new Response(JSON.stringify({ error: "Failed to update question" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.log(`Admin ${user.email} set show_image=${show_image} for question ${question_id}`);
+
+      return new Response(JSON.stringify({ ok: true, message: "Question updated successfully" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

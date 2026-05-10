@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, X, Save, FileQuestion, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, X, Save, FileQuestion, Trash2, AlertTriangle, Image, Eye, EyeOff } from "lucide-react";
 import { apiFetch } from "../lib/supabase";
 
 type Question = {
   id: number;
   desk_string: string;
+  image_url: string | null;
+  show_image: boolean;
   answers: string[];
 };
 
@@ -21,6 +23,9 @@ export function AnswerManagement({ token }: { token: string }) {
   const [tempAnswer, setTempAnswer] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImageType, setSelectedImageType] = useState<string | null>(null);
+  const [togglingImage, setTogglingImage] = useState<number | null>(null);
 
   useEffect(() => {
     loadQuestions();
@@ -76,6 +81,25 @@ export function AnswerManagement({ token }: { token: string }) {
     }
   }
 
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Check file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Image must be less than 5MB");
+        return;
+      }
+
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedImage(reader.result as string);
+        setSelectedImageType(file.type);
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
   async function createNewQuestion() {
     if (!newQuestionDesk.trim() || newQuestionAnswers.length === 0) {
       alert("Please provide a desk location and at least one answer");
@@ -91,6 +115,8 @@ export function AnswerManagement({ token }: { token: string }) {
           body: JSON.stringify({
             desk_string: newQuestionDesk.trim(),
             answers: newQuestionAnswers,
+            image_base64: selectedImage,
+            image_type: selectedImageType,
           }),
         },
         token
@@ -100,11 +126,36 @@ export function AnswerManagement({ token }: { token: string }) {
       setNewQuestionDesk("");
       setNewQuestionAnswers([]);
       setTempAnswer("");
+      setSelectedImage(null);
+      setSelectedImageType(null);
     } catch (e) {
       console.error("Failed to create question:", e);
       alert("Failed to create question");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleShowImage(questionId: number, currentState: boolean) {
+    setTogglingImage(questionId);
+    try {
+      await apiFetch(
+        "/admin/questions",
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            question_id: questionId,
+            show_image: !currentState,
+          }),
+        },
+        token
+      );
+      await loadQuestions();
+    } catch (e) {
+      console.error("Failed to toggle image display:", e);
+      alert("Failed to toggle image display");
+    } finally {
+      setTogglingImage(null);
     }
   }
 
@@ -260,7 +311,16 @@ export function AnswerManagement({ token }: { token: string }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6"
-            onClick={() => !saving && setShowNewQuestion(false)}
+            onClick={() => {
+              if (!saving) {
+                setShowNewQuestion(false);
+                setSelectedImage(null);
+                setSelectedImageType(null);
+                setNewQuestionDesk("");
+                setNewQuestionAnswers([]);
+                setTempAnswer("");
+              }
+            }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -289,6 +349,42 @@ export function AnswerManagement({ token }: { token: string }) {
                     className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#4285F4] focus:ring-4 focus:ring-[#4285F4]/20 outline-none font-medium"
                     autoFocus
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Question Image (Optional)
+                  </label>
+                  <div className="space-y-3">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                      className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-[#4285F4] file:text-white hover:file:bg-[#3367D6] file:cursor-pointer"
+                    />
+                    {selectedImage && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="relative rounded-xl overflow-hidden border-2 border-gray-200"
+                      >
+                        <img
+                          src={selectedImage}
+                          alt="Preview"
+                          className="w-full h-48 object-cover"
+                        />
+                        <button
+                          onClick={() => {
+                            setSelectedImage(null);
+                            setSelectedImageType(null);
+                          }}
+                          className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
+                        >
+                          <X size={16} />
+                        </button>
+                      </motion.div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -359,6 +455,8 @@ export function AnswerManagement({ token }: { token: string }) {
                     setNewQuestionDesk("");
                     setNewQuestionAnswers([]);
                     setTempAnswer("");
+                    setSelectedImage(null);
+                    setSelectedImageType(null);
                   }}
                   disabled={saving}
                   className="flex-1 py-3 bg-gray-200 text-gray-800 rounded-xl font-semibold hover:bg-gray-300 transition disabled:opacity-50"
@@ -404,12 +502,49 @@ export function AnswerManagement({ token }: { token: string }) {
             transition={{ delay: idx * 0.1 }}
             className="border-2 border-gray-200 rounded-2xl p-5 bg-gradient-to-br from-white to-gray-50 shadow-sm hover:shadow-md transition-shadow"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg text-gray-900">
-                <span className="text-[#4285F4]">Question {q.id}</span>
-              </h3>
+            <div className="flex items-start justify-between mb-4 gap-4">
+              <div className="flex-1">
+                <h3 className="font-bold text-lg text-gray-900 mb-2">
+                  <span className="text-[#4285F4]">Question {q.id}</span>
+                </h3>
+
+                {/* Image Preview and Toggle */}
+                {q.image_url && (
+                  <div className="mb-3 space-y-2">
+                    <img
+                      src={q.image_url}
+                      alt={`Question ${q.id}`}
+                      className="w-full max-w-xs h-32 object-cover rounded-lg border-2 border-gray-200"
+                    />
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-700">Image Display:</span>
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => toggleShowImage(q.id, q.show_image)}
+                        disabled={togglingImage === q.id}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
+                          q.show_image
+                            ? "bg-green-100 text-green-700 hover:bg-green-200"
+                            : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                        } disabled:opacity-50`}
+                      >
+                        {q.show_image ? <Eye size={14} /> : <EyeOff size={14} />}
+                        {q.show_image ? "ON" : "OFF"}
+                      </motion.button>
+                    </div>
+                  </div>
+                )}
+                {!q.image_url && (
+                  <div className="mb-3 flex items-center gap-2 text-sm text-gray-500">
+                    <Image size={16} />
+                    <span>No image uploaded</span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
-                <span className="px-3 py-1 bg-[#34A853]/10 text-[#34A853] rounded-full text-xs font-semibold">
+                <span className="px-3 py-1 bg-[#34A853]/10 text-[#34A853] rounded-full text-xs font-semibold whitespace-nowrap">
                   {q.answers.length} {q.answers.length === 1 ? "answer" : "answers"}
                 </span>
                 <motion.button

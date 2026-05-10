@@ -8,9 +8,10 @@ type AnswerSubmissionProps = {
   currentQuestion: number;
   totalQuestions: number;
   onSubmit: (answer: string) => Promise<boolean>;
+  questionImage?: string | null;
 };
 
-export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit }: AnswerSubmissionProps) {
+export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, questionImage }: AnswerSubmissionProps) {
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<"correct" | "incorrect" | null>(null);
@@ -154,6 +155,22 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit }: 
             Enter the answer you discovered at the desk location.
           </motion.p>
         </div>
+
+        {/* Question Image */}
+        {questionImage && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="mb-6 rounded-2xl overflow-hidden border-2 border-gray-200 shadow-lg"
+          >
+            <img
+              src={questionImage}
+              alt={`Question ${currentQuestion}`}
+              className="w-full h-auto object-contain max-h-96"
+            />
+          </motion.div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
