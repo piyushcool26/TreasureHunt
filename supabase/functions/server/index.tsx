@@ -34,9 +34,11 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-// Hardcoded admin email - ONLY this email gets admin role
+// Configuration from environment variables
 const ADMIN_EMAIL = "admin@google.com";
 const ALLOWED_DOMAIN = "@google.com";
+const ADMIN_PASSWORD = Deno.env.get("ADMIN_PASSWORD") || "defaultAdminPass123";
+const TEST_USER_PASSWORD = Deno.env.get("TEST_USER_PASSWORD") || "testUser123";
 
 function decodeJWT(token: string) {
   try {
@@ -233,6 +235,31 @@ async function initDatabase() {
     console.log("Admin config initialization (non-critical):", e);
   }
 
+  // Create admin user if doesn't exist
+  try {
+    const { data: adminUser } = await supabase.auth.admin.getUserByEmail(ADMIN_EMAIL);
+
+    if (!adminUser?.user) {
+      const { data: newAdmin } = await supabase.auth.admin.createUser({
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+        email_confirm: true,
+      });
+
+      if (newAdmin?.user) {
+        await supabase.from('profiles').insert({
+          id: newAdmin.user.id,
+          email: ADMIN_EMAIL,
+          role: "admin",
+          last_submission_time: new Date().toISOString(),
+        });
+        console.log("Created admin user");
+      }
+    }
+  } catch (e) {
+    console.log("Admin user check:", e);
+  }
+
   // Create test user if doesn't exist
   try {
     const testEmail = "user@google.com";
@@ -241,7 +268,7 @@ async function initDatabase() {
     if (!testUser?.user) {
       const { data: newUser } = await supabase.auth.admin.createUser({
         email: testEmail,
-        password: "user123",
+        password: TEST_USER_PASSWORD,
         email_confirm: true,
       });
 
@@ -1005,8 +1032,7 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      const { round_number, admin_password } = await req.json();
-
+      const { round_number } = await req.json();
 
       // Allow round 0 for "Empty" state (no round active)
       if (round_number === undefined || round_number === null || round_number < 0) {
