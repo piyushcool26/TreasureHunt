@@ -64,21 +64,11 @@ async function getOrCreateProfile(userId: string, email: string) {
     .single();
 
   if (existing) {
-    // Profile exists, ensure role is correct (in case admin email changed)
-    const correctRole = getUserRole(email);
-    if (existing.role !== correctRole) {
-      const { data: updated } = await supabase
-        .from('profiles')
-        .update({ role: correctRole })
-        .eq('id', userId)
-        .select()
-        .single();
-      return updated || existing;
-    }
+    // Profile exists - return it as-is (manual role changes in Supabase UI are preserved)
     return existing;
   }
 
-  // Profile doesn't exist, create it
+  // Profile doesn't exist, create it with default role based on email
   const role = getUserRole(email);
   const { data: newProfile, error: insertError } = await supabase
     .from('profiles')
