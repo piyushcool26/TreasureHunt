@@ -80,17 +80,22 @@ async function getOrCreateProfile(userId: string, email: string) {
 
   // Profile doesn't exist, create it
   const role = getUserRole(email);
-  const { data: newProfile } = await supabase
+  const { data: newProfile, error: insertError } = await supabase
     .from('profiles')
     .insert({
       id: userId,
       email,
       role,
-      current_question: 1,
+      current_question: null, // Will be set when user starts playing
       last_submission_time: new Date().toISOString(),
     })
     .select()
     .single();
+
+  if (insertError) {
+    console.error(`Failed to create profile for ${email}:`, insertError);
+    throw new Error(`Failed to create profile: ${insertError.message}`);
+  }
 
   console.log(`Created new profile: ${email} (${role})`);
   return newProfile;
@@ -111,6 +116,32 @@ async function initDatabase() {
 
       // Remove desk_string column completely since we're no longer using desk locations
       await sql`ALTER TABLE questions DROP COLUMN IF EXISTS desk_string`;
+
+      // Make current_question nullable so new users don't need an existing question
+      await sql`ALTER TABLE profiles ALTER COLUMN current_question DROP NOT NULL`;
+
+      // Drop any foreign key constraint on current_question (it's not used in the app logic)
+      await sql`
+        DO $$
+        DECLARE
+          constraint_name_var text;
+        BEGIN
+          -- Find any FK constraint on profiles.current_question
+          SELECT conname INTO constraint_name_var
+          FROM pg_constraint
+          WHERE conrelid = 'profiles'::regclass
+          AND contype = 'f'
+          AND conkey = (SELECT array_agg(attnum) FROM pg_attribute WHERE attrelid = 'profiles'::regclass AND attname = 'current_question')
+          LIMIT 1;
+
+          -- Drop it if found
+          IF constraint_name_var IS NOT NULL THEN
+            EXECUTE 'ALTER TABLE profiles DROP CONSTRAINT IF EXISTS ' || quote_ident(constraint_name_var);
+            RAISE NOTICE 'Dropped FK constraint on current_question: %', constraint_name_var;
+          END IF;
+        END $$;
+      `;
+      console.log("✓ Made profiles.current_question nullable and removed FK constraint");
 
       // CRITICAL: Remove CASCADE delete constraint from submissions table
       // This prevents submissions from being deleted when questions are deleted
@@ -220,7 +251,7 @@ async function initDatabase() {
           id: newAdmin.user.id,
           email: ADMIN_EMAIL,
           role: "admin",
-          current_question: 1,
+          current_question: null,
           last_submission_time: new Date().toISOString(),
         });
         console.log("Created admin user");
@@ -247,7 +278,7 @@ async function initDatabase() {
           id: newUser.user.id,
           email: testEmail,
           role: "user",
-          current_question: 1,
+          current_question: null,
           last_submission_time: new Date().toISOString(),
         });
         console.log("Created test user");
@@ -306,13 +337,21 @@ async function handler(req: Request): Promise<Response> {
 
       // Create profile in database with proper role
       const role = getUserRole(email);
-      await supabase.from('profiles').insert({
+      const { error: profileError } = await supabase.from('profiles').insert({
         id: data.user.id,
         email,
         role,
-        current_question: 1,
+        current_question: null, // Will be set when user starts playing
         last_submission_time: new Date().toISOString(),
       });
+
+      if (profileError) {
+        console.error(`Failed to create profile for ${email}:`, profileError);
+        return new Response(JSON.stringify({ error: `Failed to create profile: ${profileError.message}` }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       console.log(`New user signed up: ${email} (${role})`);
 
@@ -931,11 +970,11 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      // Reset all users back to question 1
+      // Reset all users (current_question is not used, progress is tracked via submissions)
       await supabase
         .from('profiles')
         .update({
-          current_question: 1,
+          current_question: null,
           last_submission_time: new Date().toISOString()
         })
         .neq('role', 'admin'); // Don't reset admin
