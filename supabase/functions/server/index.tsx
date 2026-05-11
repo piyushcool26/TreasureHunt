@@ -86,7 +86,6 @@ async function getOrCreateProfile(userId: string, email: string) {
       id: userId,
       email,
       role,
-      current_question: null, // Will be set when user starts playing
       last_submission_time: new Date().toISOString(),
     })
     .select()
@@ -117,31 +116,9 @@ async function initDatabase() {
       // Remove desk_string column completely since we're no longer using desk locations
       await sql`ALTER TABLE questions DROP COLUMN IF EXISTS desk_string`;
 
-      // Make current_question nullable so new users don't need an existing question
-      await sql`ALTER TABLE profiles ALTER COLUMN current_question DROP NOT NULL`;
-
-      // Drop any foreign key constraint on current_question (it's not used in the app logic)
-      await sql`
-        DO $$
-        DECLARE
-          constraint_name_var text;
-        BEGIN
-          -- Find any FK constraint on profiles.current_question
-          SELECT conname INTO constraint_name_var
-          FROM pg_constraint
-          WHERE conrelid = 'profiles'::regclass
-          AND contype = 'f'
-          AND conkey = (SELECT array_agg(attnum) FROM pg_attribute WHERE attrelid = 'profiles'::regclass AND attname = 'current_question')
-          LIMIT 1;
-
-          -- Drop it if found
-          IF constraint_name_var IS NOT NULL THEN
-            EXECUTE 'ALTER TABLE profiles DROP CONSTRAINT IF EXISTS ' || quote_ident(constraint_name_var);
-            RAISE NOTICE 'Dropped FK constraint on current_question: %', constraint_name_var;
-          END IF;
-        END $$;
-      `;
-      console.log("✓ Made profiles.current_question nullable and removed FK constraint");
+      // Drop current_question column - progress is tracked via submissions table
+      await sql`ALTER TABLE profiles DROP COLUMN IF EXISTS current_question`;
+      console.log("✓ Dropped profiles.current_question column (progress tracked via submissions)");
 
       // CRITICAL: Remove CASCADE delete constraint from submissions table
       // This prevents submissions from being deleted when questions are deleted
@@ -188,8 +165,39 @@ async function initDatabase() {
         console.log("Foreign key migration (non-critical):", fkError);
       }
 
+      // Create performance indexes for fast queries
+      try {
+        // Index for leaderboard queries (submissions by user, round, and correctness)
+        await sql`
+          CREATE INDEX IF NOT EXISTS idx_submissions_user_round_correct
+          ON submissions(user_id, round_number, is_correct)
+        `;
+
+        // Index for rate limiting (submissions by user and time)
+        await sql`
+          CREATE INDEX IF NOT EXISTS idx_submissions_user_time
+          ON submissions(user_id, submitted_at)
+        `;
+
+        // Index for question lookup (by round and display number)
+        await sql`
+          CREATE INDEX IF NOT EXISTS idx_questions_round_display
+          ON questions(round_number, display_number)
+        `;
+
+        // Index for getting latest submission time
+        await sql`
+          CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at
+          ON submissions(submitted_at DESC)
+        `;
+
+        console.log("✓ Created performance indexes for fast queries");
+      } catch (indexError) {
+        console.log("Index creation (non-critical):", indexError);
+      }
+
       await sql.end();
-      console.log("✓ Database migrations: Multi-day rounds support added, desk_string removed, submissions protected");
+      console.log("✓ Database migrations: Multi-round support, desk_string removed, current_question removed, submissions protected, indexes optimized");
     }
   } catch (e) {
     console.log("Migration (non-critical):", e);
@@ -251,7 +259,6 @@ async function initDatabase() {
           id: newAdmin.user.id,
           email: ADMIN_EMAIL,
           role: "admin",
-          current_question: null,
           last_submission_time: new Date().toISOString(),
         });
         console.log("Created admin user");
@@ -278,7 +285,6 @@ async function initDatabase() {
           id: newUser.user.id,
           email: testEmail,
           role: "user",
-          current_question: null,
           last_submission_time: new Date().toISOString(),
         });
         console.log("Created test user");
@@ -341,7 +347,6 @@ async function handler(req: Request): Promise<Response> {
         id: data.user.id,
         email,
         role,
-        current_question: null, // Will be set when user starts playing
         last_submission_time: new Date().toISOString(),
       });
 
@@ -649,53 +654,67 @@ async function handler(req: Request): Promise<Response> {
 
       const activeRound = config?.active_round_number ?? 0;
 
-      // Get all users with their progress in the ACTIVE round
-      const { data: leaderboardData } = await supabase
-        .from('profiles')
-        .select('id, email, role')
-        .neq('role', 'admin');
+      // OPTIMIZED: Single query to get leaderboard using postgres.js for raw SQL
+      const dbUrl = Deno.env.get("SUPABASE_DB_URL");
+      let leaderboard: any[] = [];
 
-      if (!leaderboardData) {
-        return new Response(JSON.stringify({ leaderboard: [], activeRound }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+      if (dbUrl) {
+        try {
+          const sql = postgres(dbUrl);
 
-      // For each user, count their correct submissions in the active round
-      const leaderboardPromises = leaderboardData.map(async (user: any) => {
-        const { count: correctCount, data: submissions } = await supabase
-          .from('submissions')
-          .select('submitted_at', { count: 'exact' })
-          .eq('user_id', user.id)
-          .eq('round_number', activeRound)
-          .eq('is_correct', true)
-          .order('submitted_at', { ascending: false })
-          .limit(1);
+          // Single efficient query with JOIN and GROUP BY
+          leaderboard = await sql`
+            SELECT
+              p.id,
+              SPLIT_PART(p.email, '@', 1) as name,
+              COALESCE(COUNT(s.id) FILTER (WHERE s.is_correct = true), 0)::int as correct_count,
+              MAX(s.submitted_at) FILTER (WHERE s.is_correct = true) as last_correct_time
+            FROM profiles p
+            LEFT JOIN submissions s ON p.id = s.user_id AND s.round_number = ${activeRound}
+            WHERE p.role != 'admin'
+            GROUP BY p.id, p.email
+            ORDER BY correct_count DESC, last_correct_time ASC NULLS LAST
+          `;
 
-        const lastCorrectTime = submissions && submissions.length > 0
-          ? submissions[0].submitted_at
-          : null;
+          await sql.end();
+        } catch (sqlError) {
+          console.error("Leaderboard SQL error, falling back:", sqlError);
 
-        return {
-          id: user.id,
-          name: user.email.split("@")[0],
-          correct_count: correctCount || 0,
-          last_correct_time: lastCorrectTime,
-        };
-      });
+          // Fallback to slower method if SQL fails
+          const { data: leaderboardData } = await supabase
+            .from('profiles')
+            .select('id, email, role')
+            .neq('role', 'admin');
 
-      const leaderboard = await Promise.all(leaderboardPromises);
+          if (leaderboardData) {
+            const leaderboardPromises = leaderboardData.map(async (user: any) => {
+              const { count: correctCount, data: submissions } = await supabase
+                .from('submissions')
+                .select('submitted_at', { count: 'exact' })
+                .eq('user_id', user.id)
+                .eq('round_number', activeRound)
+                .eq('is_correct', true)
+                .order('submitted_at', { ascending: false })
+                .limit(1);
 
-      // Sort by correct count (desc), then by last correct time (asc)
-      leaderboard.sort((a, b) => {
-        if (b.correct_count !== a.correct_count) {
-          return b.correct_count - a.correct_count;
+              return {
+                id: user.id,
+                name: user.email.split("@")[0],
+                correct_count: correctCount || 0,
+                last_correct_time: submissions?.[0]?.submitted_at || null,
+              };
+            });
+
+            leaderboard = await Promise.all(leaderboardPromises);
+            leaderboard.sort((a, b) => {
+              if (b.correct_count !== a.correct_count) return b.correct_count - a.correct_count;
+              if (!a.last_correct_time) return 1;
+              if (!b.last_correct_time) return -1;
+              return new Date(a.last_correct_time).getTime() - new Date(b.last_correct_time).getTime();
+            });
+          }
         }
-        // If counts are equal, earlier completion time wins
-        if (!a.last_correct_time) return 1;
-        if (!b.last_correct_time) return -1;
-        return new Date(a.last_correct_time).getTime() - new Date(b.last_correct_time).getTime();
-      });
+      }
 
       console.log(`Daily leaderboard for Round ${activeRound}: ${leaderboard.length} users`);
 
@@ -970,11 +989,10 @@ async function handler(req: Request): Promise<Response> {
         });
       }
 
-      // Reset all users (current_question is not used, progress is tracked via submissions)
+      // Reset all users (progress is tracked via submissions table)
       await supabase
         .from('profiles')
         .update({
-          current_question: null,
           last_submission_time: new Date().toISOString()
         })
         .neq('role', 'admin'); // Don't reset admin

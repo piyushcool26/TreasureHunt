@@ -100,7 +100,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
 
   // Realtime question updates - refresh question data when it changes
   useEffect(() => {
-    if (!profile || finished) return;
+    if (!profile || finished || !questionData?.id) return;
 
     const channel = supabase
       .channel('questions-updates')
@@ -110,10 +110,10 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
           event: 'UPDATE',
           schema: 'public',
           table: 'questions',
-          filter: `id=eq.${profile.current_question}`,
+          filter: `id=eq.${questionData.id}`,
         },
         async () => {
-          // Re-fetch question data when it's updated
+          // Re-fetch question data when it's updated (e.g., show_image toggled)
           try {
             const questionRes = await apiFetch("/question", {}, token);
             if (questionRes.question) {
@@ -129,7 +129,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile, finished, token]);
+  }, [profile, finished, token, questionData?.id]);
 
   // Periodic leaderboard refresh
   useEffect(() => {
@@ -181,8 +181,6 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
         token,
       );
       if (res.correct) {
-        // Small delay to ensure database has committed the transaction
-        await new Promise(resolve => setTimeout(resolve, 500));
         await refresh();
         return { correct: true };
       }
