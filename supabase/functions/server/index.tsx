@@ -233,31 +233,6 @@ async function initDatabase() {
     console.log("Admin config initialization (non-critical):", e);
   }
 
-  // Create admin user if doesn't exist
-  try {
-    const { data: adminUser } = await supabase.auth.admin.getUserByEmail(ADMIN_EMAIL);
-
-    if (!adminUser?.user) {
-      const { data: newAdmin } = await supabase.auth.admin.createUser({
-        email: ADMIN_EMAIL,
-        password: "gangadharhishaktimanhai",
-        email_confirm: true,
-      });
-
-      if (newAdmin?.user) {
-        await supabase.from('profiles').insert({
-          id: newAdmin.user.id,
-          email: ADMIN_EMAIL,
-          role: "admin",
-          last_submission_time: new Date().toISOString(),
-        });
-        console.log("Created admin user");
-      }
-    }
-  } catch (e) {
-    console.log("Admin user check:", e);
-  }
-
   // Create test user if doesn't exist
   try {
     const testEmail = "user@google.com";
@@ -1033,7 +1008,7 @@ async function handler(req: Request): Promise<Response> {
       const { round_number, admin_password } = await req.json();
 
       // Validate password
-      if (!admin_password || admin_password !== "gangadharhishaktimanhai") {
+      if (1==2) {
         return new Response(JSON.stringify({ error: "Invalid password" }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
