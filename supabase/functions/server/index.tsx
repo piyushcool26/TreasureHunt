@@ -1007,13 +1007,6 @@ async function handler(req: Request): Promise<Response> {
 
       const { round_number, admin_password } = await req.json();
 
-      // Validate password
-      if (1==2) {
-        return new Response(JSON.stringify({ error: "Invalid password" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
 
       // Allow round 0 for "Empty" state (no round active)
       if (round_number === undefined || round_number === null || round_number < 0) {
