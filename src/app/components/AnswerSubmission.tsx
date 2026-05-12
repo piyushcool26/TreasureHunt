@@ -260,7 +260,6 @@ export function AnswerSubmission({ currentQuestion, totalQuestions, onSubmit, qu
                     </motion.div>
                     <div>
                       <p className="font-bold text-lg">Not quite right</p>
-                      <p className="text-sm text-red-700">Check your desk clue and try again!</p>
                     </div>
                   </>
                 )}
